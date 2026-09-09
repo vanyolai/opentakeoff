@@ -25,7 +25,7 @@ import { M_PER_FT, M2_PER_SF } from "./units";
 import { attrValue } from "./conditionColumns.js";
 import { shapeLabelValue } from "./shapeLabels.js";
 import { compareSheetKeys } from "./sheetKey"; // NOT ./sheets — that module imports pdfjs-dist
-import { coverageToDisplay } from "./coverageUnits.js";
+import { coverageToDisplay, coverageBasisLabel } from "./coverageUnits.js";
 
 // Re-export so existing consumers (markedset, snapshotDiff, ReportPanel, tests)
 // keep importing round2 from here; num.js is the single definition.
@@ -389,8 +389,8 @@ export function grandTotals(rows) {
  * @param {string} [brandName]
  * @param {"imperial"|"metric"} [units] display units — "metric" converts every
  *   dimensioned column/section to m²/m and RETIRES the SY column (upstream's
- *   metric contract); coverage rates in the materials section stay as entered
- *   (SF/LF-based). "imperial" (default) is byte-identical to the frozen export.
+ *   metric contract), including supporting-material coverage rates. "imperial"
+ *   (default) is byte-identical to the frozen export.
  * @returns {string}
  */
 export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel = null, cols = null, ctx = null, byLabel = null, brandName = "OpenTakeoff", units = "imperial") {
@@ -432,15 +432,6 @@ export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel =
     );
   };
 
-  const basisLabel = (b) =>
-    b === "linear"
-      ? (M ? "m" : "LF")
-      : b === "count"
-        ? "EA"
-        : b === "seam_lf"
-          ? (M ? "seam m" : "seam LF")
-          : (M ? "m2" : "SF");
-
   const perCond = [];
   for (const r of rows) {
     for (const m of (r.materials || [])) {
@@ -449,7 +440,7 @@ export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel =
         m.name,
         m.qty,
         m.unit,
-        `1 ${m.unit || "unit"} / ${coveragePer(m)} ${basisLabel(m.basis)}`,
+        `1 ${m.unit || "unit"} / ${coveragePer(m)} ${coverageBasisLabel(m.basis, units).replace("m²", "m2")}`,
         m.note || "",
       ]);
     }

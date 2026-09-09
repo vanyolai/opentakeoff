@@ -41,7 +41,7 @@ import { hasRollSetup, mintRollSetup } from "../lib/rollTakeoff.js";
 import { Z } from "../lib/ui.js";
 import { ftIn } from "../lib/units";
 import { describeConditionEdit } from "../lib/proposals.js";
-import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel,} from "../lib/coverageUnits.js";
+import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "../lib/coverageUnits.js";
 
 export const PANEL_MIN_W = 240;
 export const PANEL_MAX_W = 560;
@@ -424,7 +424,14 @@ function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library, libByI
           title="Attach a material from the library — the line copies the library values and stays linked"
           style={{ ...ip, marginLeft: 6, background: "var(--paper-bright)", color: "var(--ink-muted)" }}>
           <option value="">+ from library…</option>
-          {library.map((lm) => <option key={lm.id} value={lm.id}>{lm.name || "(unnamed)"}{lm.per ? ` · ${lm.per}/${lm.unit || "?"}` : ""}</option>)}
+          {library.map((lm) => (
+            <option key={lm.id} value={lm.id}>
+              {lm.name || "(unnamed)"}
+              {lm.per
+                ? ` · ${Number(coverageToDisplay(lm.per, lm.basis || "area", units).toFixed(2))} ${coverageBasisLabel(lm.basis || "area", units)}/${lm.unit || "?"}`
+                : ""}
+            </option>
+          ))}
         </select>
       )}
     </>
@@ -1161,7 +1168,7 @@ function TakeoffsPanel({
               twin={!!c.variant_of} parentTag={(conditions.find((x) => x.id === c.variant_of) || {}).finish_tag || ""}
               dropped={c.materials_dropped || []} parentRows={(conditions.find((x) => x.id === c.variant_of) || {}).materials || []}
               onFollowFamilyRow={onFollowFamilyRow} onRestoreDroppedRow={onRestoreDroppedRow}
-              heightFt={c.height_ft} units={units}/>
+              heightFt={c.height_ft} units={units} />
             {/* Duplicate, inline — deliberately NOT a window.prompt: those freeze a
                 CDP/automation-driven session dead, and this panel is scripted in demos. */}
             {onDuplicateCondition && (twinDraft.id === c.id ? (

@@ -181,6 +181,12 @@ test("reportWorkbook: materials quantity matches conditionTotals (measured basis
   assert.equal(adhesive![2], rows[0].materials[0].qty);
 });
 
+test("reportWorkbook: metric Materials tab converts coverage rates", () => {
+  const tabs = reportWorkbook({ ...workbookArgs(), units: "metric" });
+  const adhesive = tabs[2].rows.find((r: any[]) => r[1] === "Adhesive");
+  assert.equal(adhesive![4], "1 bucket / 9.29 m2");
+});
+
 // ---------------------------------------------------------------------------
 // the zipped package
 

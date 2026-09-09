@@ -2,6 +2,12 @@
 
 All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 
+## Unreleased — Metric supporting-material coverage and live counter
+
+### Changed
+- **Supporting-material coverage follows the active unit system.** Condition and material-library editors, coverage presets, CSV, and Excel show area rates in SF or m² and length rates in LF or m. Rates remain stored in the existing internal units, so switching the display never changes an order quantity. Count-based rates remain EA.
+- **The floating live counter follows metric mode.** Measured area and length totals switch to m² and m with the rest of the workspace; EA remains unchanged.
+
 ## Unreleased — Equipment schedules of any trade, and counting by label (mcp 0.9.77)
 
 ### Added

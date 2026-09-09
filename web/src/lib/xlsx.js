@@ -17,6 +17,7 @@ import { GETTERS, colGetter, applyUnits, METRIC_CSV_LABELS } from "./reportColum
 import { grandTotals, materialsSummary, roundSheetRow, hasMultipliers, BY_SHEET_BASE_NOTE } from "./totals.js";
 import { round2 } from "./num.js";
 import { M_PER_FT, M2_PER_SF } from "./units";
+import { coverageToDisplay, coverageBasisLabel } from "./coverageUnits.js";
 
 // ---------------------------------------------------------------------------
 // XML plumbing
@@ -169,9 +170,9 @@ export async function buildXlsx(sheets) {
  *   [args.ctx] handed to the getters
  * @param {((sheetId: any) => string)|null} [args.sheetLabel]
  * @param {"imperial"|"metric"} [args.units] display units — "metric" converts
- *   the Conditions and By-sheet tabs to m2/m (SY retires) exactly like the CSV;
- *   the Shapes tab stays raw internal feet (the shapes CSV/JSON contract) and
- *   its note line says so. "imperial" (default) is byte-identical.
+ *   the Conditions, By-sheet, and Materials tabs to m2/m (SY retires) exactly
+ *   like the CSV; the Shapes tab stays raw internal feet (the shapes CSV/JSON
+ *   contract) and its note line says so. "imperial" (default) is byte-identical.
  * @returns {Array<{name: string, rows: any[][]}>}
  */
 export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols = null, ctx = null, sheetLabel = null, units = "imperial", byFloorRoom = [] }) {
@@ -207,10 +208,10 @@ export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols =
   if (hasMultipliers(bySheet)) bySheetRows.push([], [BY_SHEET_BASE_NOTE]);
 
   // Materials — per condition, then the combined buy list (mirrors the CSV)
-  const basisLabel = (b) => (b === "linear" ? "LF" : b === "count" ? "EA" : b === "seam_lf" ? "seam LF" : "SF");
+  const coveragePer = (m) => round2(coverageToDisplay(m.per, m.basis || "area", units));
   const materials = [["Finish", "Material", "Qty", "Unit", "Coverage", "Note"]];
   for (const r of rows) for (const m of (r.materials || [])) {
-    materials.push([r.finish_tag, m.name, m.qty, m.unit, `1 ${m.unit || "unit"} / ${m.per} ${basisLabel(m.basis)}`, m.note || ""]);
+    materials.push([r.finish_tag, m.name, m.qty, m.unit, `1 ${m.unit || "unit"} / ${coveragePer(m)} ${coverageBasisLabel(m.basis, units).replace("m²", "m2")}`, m.note || ""]);
   }
   const combined = materialsSummary(rows);
   if (combined.length) {
