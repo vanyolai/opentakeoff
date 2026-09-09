@@ -25,6 +25,7 @@ import { M_PER_FT, M2_PER_SF } from "./units";
 import { attrValue } from "./conditionColumns.js";
 import { shapeLabelValue } from "./shapeLabels.js";
 import { compareSheetKeys } from "./sheetKey"; // NOT ./sheets — that module imports pdfjs-dist
+import { coverageToDisplay } from "./coverageUnits.js";
 
 // Re-export so existing consumers (markedset, snapshotDiff, ReportPanel, tests)
 // keep importing round2 from here; num.js is the single definition.
@@ -417,12 +418,42 @@ export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel =
   };
   lines.push(columns.map((c) => esc(foot(c))).join(","));
 
-  // supporting materials — per condition, then a combined buy list. Coverage
-  // rates deliberately stay as entered (SF/LF-based) in metric mode — the
-  // upstream metric contract; the report panel carries the footnote.
-  const basisLabel = (b) => (b === "linear" ? "LF" : b === "count" ? "EA" : b === "seam_lf" ? "seam LF" : "SF");
+  // supporting materials — per condition, then a combined buy list.
+  // Coverage follows display units: SF/LF in imperial mode, m²/m in metric mode.
+  const coveragePer = (m) => {
+    if (m.basis === "count") return m.per;
+
+    return round2(
+      coverageToDisplay(
+        m.per,
+        m.basis || "area",
+        units
+      )
+    );
+  };
+
+  const basisLabel = (b) =>
+    b === "linear"
+      ? (M ? "m" : "LF")
+      : b === "count"
+        ? "EA"
+        : b === "seam_lf"
+          ? (M ? "seam m" : "seam LF")
+          : (M ? "m2" : "SF");
+
   const perCond = [];
-  for (const r of rows) for (const m of (r.materials || [])) perCond.push([r.finish_tag, m.name, m.qty, m.unit, `1 ${m.unit || "unit"} / ${m.per} ${basisLabel(m.basis)}`, m.note || ""]);
+  for (const r of rows) {
+    for (const m of (r.materials || [])) {
+      perCond.push([
+        r.finish_tag,
+        m.name,
+        m.qty,
+        m.unit,
+        `1 ${m.unit || "unit"} / ${coveragePer(m)} ${basisLabel(m.basis)}`,
+        m.note || "",
+      ]);
+    }
+  }
   if (perCond.length) {
     lines.push("");
     lines.push(["Finish", "Material", "Qty", "Unit", "Coverage", "Note"].map(esc).join(","));

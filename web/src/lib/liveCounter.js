@@ -7,22 +7,51 @@
 // Quantities shown are MEASURED (total_sf / lf / ea — multiplier applied,
 // no waste): the number that moves as you trace, matching the panel chips,
 // not the order quantity. Waste belongs on the Report.
-
+import { M_PER_FT, M2_PER_SF } from "./units";
 export const COUNTER_POS_KEY = "ot.liveCounterPos.v1";
 export const COUNTER_MIN_KEY = "ot.liveCounterMin.v1";
 
 // conditionTotals rows → display rows. A condition can carry more than one
 // unit (a tile floor with a border: SF and LF); every nonzero quantity gets a
-// segment, ordered SF → LF → EA, so the row reads like the panel chip.
-export function counterRows(totals, activeCondId) {
+// segment, ordered area → linear → count, so the row reads like the panel chip.
+// Display units follow the workspace unit system (SF/LF or m²/m); EA is unchanged.
+export function counterRows(totals, activeCondId, units = "imperial") {
+  const metric = units === "metric";
+
   return totals
     .filter((t) => t.shape_count > 0)
     .map((t) => {
       const qtys = [];
-      if (t.total_sf) qtys.push({ qty: t.total_sf, unit: "SF" });
-      if (t.lf) qtys.push({ qty: t.lf, unit: "LF" });
-      if (t.ea) qtys.push({ qty: t.ea, unit: "EA" });
-      return { id: t.id, tag: t.finish_tag, color: t.color, qtys, shapes: t.shape_count, active: t.id === activeCondId };
+
+      if (t.total_sf) {
+        qtys.push({
+          qty: metric ? t.total_sf * M2_PER_SF : t.total_sf,
+          unit: metric ? "m²" : "SF",
+        });
+      }
+
+      if (t.lf) {
+        qtys.push({
+          qty: metric ? t.lf * M_PER_FT : t.lf,
+          unit: metric ? "m" : "LF",
+        });
+      }
+
+      if (t.ea) {
+        qtys.push({
+          qty: t.ea,
+          unit: "EA",
+        });
+      }
+
+      return {
+        id: t.id,
+        tag: t.finish_tag,
+        color: t.color,
+        qtys,
+        shapes: t.shape_count,
+        active: t.id === activeCondId,
+      };
     })
     .filter((r) => r.qtys.length);
 }
