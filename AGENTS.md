@@ -2,6 +2,10 @@
 
 OpenTakeoff is a **client-only React app**: a PDF construction-takeoff canvas for flooring (useful for any trade). No backend, no database, no auth—everything runs and persists in the browser. Apache-2.0. (For the one-page project pitch and vision, see [`AGENT_BRIEF.md`](AGENT_BRIEF.md); for capability → code mapping, see [`FEATURES.md`](FEATURES.md).)
 
+The downstream `selfhosted` product direction and branch policy live in
+[`docs/SELFHOSTED_DIRECTION.md`](docs/SELFHOSTED_DIRECTION.md). Read that file
+before starting downstream feature work.
+
 ## Run / build / check
 
 ```bash
