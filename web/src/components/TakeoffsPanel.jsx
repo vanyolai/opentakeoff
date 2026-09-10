@@ -504,6 +504,11 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
   const isRow = layout === "row";
   const objectStyle = resolveObjectStyle(c);
   const symbolGroups = objectSymbolsByGroup();
+  const selectedSymbolGroupId = symbolGroups.find((group) => group.symbols.some((symbol) => symbol.id === objectStyle.symbol_id))?.id || symbolGroups[0]?.id || null;
+  const [openSymbolGroupId, setOpenSymbolGroupId] = useState(selectedSymbolGroupId);
+  useEffect(() => {
+    if (objectStyle.marker === "symbol") setOpenSymbolGroupId(selectedSymbolGroupId);
+  }, [c.id, objectStyle.marker, selectedSymbolGroupId]);
   const patchObjectStyle = (patch) => onUpdateCond({
     object_style: { ...(c.object_style && typeof c.object_style === "object" && !Array.isArray(c.object_style) ? c.object_style : {}), ...patch },
   });
@@ -551,17 +556,30 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
             </select>
           </span>
         ) : (
-          <span style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 4 }}>
-            {symbolGroups.map((group) => <span key={group.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 76, flex: "0 0 76px", color: "var(--ink-muted)", fontSize: 9.5 }}>{group.label}</span>
-              <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
-                {group.symbols.map((s) => <button key={s.id} title={s.label} aria-label={s.label}
-                  onClick={() => patchObjectStyle({ symbol_id: s.id })}
-                  style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: objectStyle.symbol_id === s.id ? `2px solid ${activeColor}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color: activeColor, cursor: "pointer" }}>
-                  <ObjectSymbolPreview symbolId={s.id} color={activeColor} size={20} />
-                </button>)}
-              </span>
-            </span>)}
+          <span style={{ flexBasis: "100%", display: "flex", flexDirection: "column", border: "1px solid var(--ink-faint)" }}>
+            {symbolGroups.map((group, index) => {
+              const expanded = openSymbolGroupId === group.id;
+              const selected = group.symbols.find((symbol) => symbol.id === objectStyle.symbol_id);
+              return <span key={group.id} style={{ display: "flex", flexDirection: "column", borderTop: index ? "1px solid var(--ink-faint)" : "none" }}>
+                <button type="button" data-testid={`symbol-group-${group.id}`} aria-expanded={expanded}
+                  onClick={() => setOpenSymbolGroupId((current) => current === group.id ? null : group.id)}
+                  style={{ minHeight: 28, padding: "3px 6px", display: "flex", alignItems: "center", gap: 6, border: "none", borderRadius: 0, background: expanded ? "var(--paper)" : "var(--paper-bright)", color: "var(--ink)", cursor: "pointer", textAlign: "left", fontSize: 10.5 }}>
+                  <span aria-hidden style={{ width: 8, color: "var(--ink-muted)" }}>{expanded ? "▾" : "▸"}</span>
+                  <span style={{ flex: 1 }}>{group.label}</span>
+                  {selected && <span title={`Selected: ${selected.label}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: activeColor, fontSize: 9.5 }}>
+                    <ObjectSymbolPreview symbolId={selected.id} color={activeColor} size={16} />
+                    {selected.label}
+                  </span>}
+                </button>
+                {expanded && <span role="group" aria-label={`${group.label} symbols`} style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "5px 6px 6px", background: "var(--paper-bright)" }}>
+                  {group.symbols.map((s) => <button type="button" key={s.id} title={s.label} aria-label={s.label}
+                    onClick={() => patchObjectStyle({ symbol_id: s.id })}
+                    style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: objectStyle.symbol_id === s.id ? `2px solid ${activeColor}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color: activeColor, cursor: "pointer" }}>
+                    <ObjectSymbolPreview symbolId={s.id} color={activeColor} size={20} />
+                  </button>)}
+                </span>}
+              </span>;
+            })}
           </span>
         ))}
         <span style={{ color: "var(--ink-muted)", marginLeft: 2 }}>Label</span>

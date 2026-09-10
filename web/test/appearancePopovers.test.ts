@@ -28,3 +28,15 @@ test("docked panel (stack): inline palettes stay — it has the room", () => {
   const swatches = (html.match(/title="#[0-9a-f]{6}"/g) || []).length;
   assert.equal(swatches, PALETTE.length * 2, "line + fill palettes inline");
 });
+
+test("docked symbol picker opens only the selected topic instead of rendering every icon", () => {
+  const symbolCond = { ...cond, object_style: { marker: "symbol", symbol_id: "camera_dome", label_mode: "none" } };
+  const html = renderToStaticMarkup(
+    React.createElement(ConditionAppearanceEditor as any, { cond: symbolCond, onUpdateCond: noop, onSetCondParam: noop, onAssignAttr: noop, layout: "stack" })
+  );
+  assert.match(html, /data-testid="symbol-group-cctv" aria-expanded="true"/);
+  assert.match(html, /data-testid="symbol-group-intrusion" aria-expanded="false"/);
+  assert.match(html, /aria-label="CCTV symbols"/);
+  assert.doesNotMatch(html, /aria-label="Intrusion alarm symbols"/);
+  assert.match(html, /Selected: Dome camera/);
+});
