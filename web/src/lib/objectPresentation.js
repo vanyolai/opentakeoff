@@ -16,13 +16,13 @@ const arc = (cx, cy, r, fromDeg, toDeg, steps = 8) => Array.from({ length: steps
 });
 
 export const OBJECT_SYMBOL_GROUPS = [
-  { id: "electrical", label: "Electrical" },
-  { id: "cctv", label: "CCTV" },
-  { id: "network", label: "Data & network" },
-  { id: "intrusion", label: "Intrusion alarm" },
-  { id: "access", label: "Access & intercom" },
-  { id: "fire", label: "Fire alarm" },
-  { id: "infrastructure", label: "Infrastructure" },
+  { id: "electrical", label: "Electrical", tab_label: "Elec." },
+  { id: "cctv", label: "CCTV", tab_label: "CCTV" },
+  { id: "network", label: "Data & network", tab_label: "Network" },
+  { id: "intrusion", label: "Intrusion alarm", tab_label: "Alarm" },
+  { id: "access", label: "Access & intercom", tab_label: "Access" },
+  { id: "fire", label: "Fire alarm", tab_label: "Fire" },
+  { id: "infrastructure", label: "Infrastructure", tab_label: "Infra" },
 ];
 
 // Deliberately small line-art primitives keep one source of truth for canvas,

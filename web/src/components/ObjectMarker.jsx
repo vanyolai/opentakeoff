@@ -1,5 +1,6 @@
 import React from "react";
 import { objectSymbol, resolveObjectStyle } from "../lib/objectPresentation.js";
+import { HatchSwatch } from "./hatches.jsx";
 
 export function ObjectSymbolGlyph({ symbolId, color = "currentColor", strokeWidth = 1.8 }) {
   const symbol = objectSymbol(symbolId);
@@ -14,6 +15,38 @@ export function ObjectSymbolGlyph({ symbolId, color = "currentColor", strokeWidt
 
 export function ObjectSymbolPreview({ symbolId, color = "currentColor", size = 22 }) {
   return <svg aria-hidden width={size} height={size} viewBox="-12 -12 24 24"><ObjectSymbolGlyph symbolId={symbolId} color={color} /></svg>;
+}
+
+// One condition marker for compact condition lists and report legends. Symbol
+// choice is presentation only, so callers pass the live condition rather than
+// copying object_style into report rows or changing the export schema.
+export function ConditionMark({ condition, color, variant = "swatch" }) {
+  const style = resolveObjectStyle(condition);
+  const col = color || condition?.color || "#888";
+  if (style.marker === "symbol") {
+    const label = objectSymbol(style.symbol_id).label;
+    if (variant === "legend") {
+      return (
+        <span data-condition-mark="symbol" data-symbol-id={style.symbol_id} title={label}
+          style={{ width: 18, height: 18, display: "inline-grid", placeItems: "center", flexShrink: 0, lineHeight: 0 }}>
+          <ObjectSymbolPreview symbolId={style.symbol_id} color={col} size={18} />
+        </span>
+      );
+    }
+    return (
+      <svg data-condition-mark="symbol" data-symbol-id={style.symbol_id} aria-hidden width="26" height="18" viewBox="0 0 26 18" style={{ display: "block", overflow: "hidden" }}>
+        <rect x="0.5" y="0.5" width="25" height="17" fill="var(--paper-bright)" stroke="#a39e8d" />
+        <g transform="translate(13 9) scale(.65)"><ObjectSymbolGlyph symbolId={style.symbol_id} color={col} strokeWidth={2} /></g>
+      </svg>
+    );
+  }
+  if (variant === "legend") {
+    return <span data-condition-mark="square" title="Condition color"
+      style={{ width: 12, height: 12, background: col, display: "inline-block", border: "1px solid var(--ink-faint)", flexShrink: 0 }} />;
+  }
+  return <span data-condition-mark="square" style={{ display: "inline-block", lineHeight: 0 }}>
+    <HatchSwatch type={condition?.hatch || "solid"} line={col} fill={condition?.fill} />
+  </span>;
 }
 
 export function ObjectMarker({ shape, condition, cx, cy, zoom, selected, pending, selectionColor }) {

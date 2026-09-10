@@ -51,8 +51,8 @@ markers.
 The first built-in library is grouped around low-voltage work: CCTV,
 data/network, intrusion alarm, access/intercom, fire alarm and supporting
 infrastructure, with the original electrical proof symbols retained. Its line
-art is shared by the picker, canvas and Marked Set export. Custom symbol import
-and company-specific libraries come later.
+art is shared by the picker, condition list, canvas, Report and Marked Set
+export. Custom symbol import and company-specific libraries come later.
 
 ### Discipline profile
 
