@@ -237,7 +237,7 @@ A **condition** is one finish—`LVT-1`, `CPT-2`, `RB-1`—and it's what every m
 - **Waste %**—the allowance the Report adds on top of the measured quantity. Per condition, matched to the install: ~8% straight-lay LVP, ~15% diagonal, ~20% herringbone.
 - **Line** color, **Fill** color (or **No fill**), and the **hatch pattern**. In the top-bar band, **Line** and **Fill** are two swatch buttons that each open their own palette (one at a time; Esc or a click outside closes)—the swatch shows the current color, so the band reads at a glance. The docked panel keeps both palettes inline.—a picker grid of CAD hatches (plank, herringbone, tile, terrazzo…) that names the pattern under your cursor, so the canvas reads like the real drawing.
 - **Line style**—the outline dash for this finish's floor and linear takeoffs, on canvas and in the Marked Set.
-- **Object**—the marker used by this condition's Count takeoffs: the original color square, or a built-in outlet, switch, light, data, or camera symbol. **Label** can be none, the condition tag, fixed custom text, or **Sequential**. Sequential takes a prefix such as `CAM-` and a next number; each placement receives its own stable `CAM-1`, `CAM-2`, … label. The marker and plan labels also print in the Marked Set.
+- **Object**—the marker used by this condition's Count takeoffs: the original color square, or a grouped built-in symbol. The low-voltage set covers CCTV cameras, data and Wi-Fi, racks, intrusion detectors and alarm equipment, access control and intercoms, fire-alarm devices, power supplies and junction boxes. **Label** can be none, the condition tag, fixed custom text, or **Sequential**. Sequential defaults its prefix from the condition tag (`CAM` becomes `CAM-`) and lets you edit or clear it; each placement receives its own stable `CAM-1`, `CAM-2`, … label. The marker and plan labels also print in the Marked Set.
 - **H** (height, ft)—the default for **new** wall traces (Surface Area SF = LF × H) and the vertical-SF display. Existing walls keep the height they were drawn at—select a wall to change only that one (§5).
 - **T** (thickness, in)—a Linear run with thickness also computes border/feature-strip SF = LF × T⁄12. Changing it re-flows existing runs.
 
@@ -409,7 +409,7 @@ Trace a wall run in plan; wall SF = traced LF × the condition's **height**. The
 
 ### Count (`C`)
 
-One click, one marker, one EA. Counts commit immediately on click and are the one measurement that works without a scale. Their condition decides whether they appear as the original color marker or a built-in symbol and whether a plan label is shown. A Sequential label is issued at placement time, so later edits never renumber the rest of the plan; a multi-match Symbol sweep receives one consecutive run of numbers.
+One click, one marker, one EA. Counts commit immediately on click and are the one measurement that works without a scale. Their condition decides whether they appear as the original color marker or a built-in symbol and whether a plan label is shown. A Sequential label is issued at placement time, defaulting its prefix from the condition tag, so later edits never renumber the rest of the plan; a multi-match Symbol sweep receives one consecutive run of numbers.
 
 ### Cut Out — deducts (`D`, `⇧D`)
 

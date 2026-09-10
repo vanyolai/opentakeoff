@@ -48,10 +48,11 @@ Existing projects and object types default to the colored square. Opening an
 older project must not require migration choices or change its visible
 markers.
 
-The exact first built-in symbol set remains to be selected. The milestone needs
-only enough symbols to prove the model, picker, persistence, canvas rendering,
-and takeoff behavior. A full symbol library and custom symbol import come
-later.
+The first built-in library is grouped around low-voltage work: CCTV,
+data/network, intrusion alarm, access/intercom, fire alarm and supporting
+infrastructure, with the original electrical proof symbols retained. Its line
+art is shared by the picker, canvas and Marked Set export. Custom symbol import
+and company-specific libraries come later.
 
 ### Discipline profile
 
@@ -122,7 +123,6 @@ Resolve these questions before implementation reaches the affected surface:
 - whether the selected profile belongs to one project or to the whole local
   workspace;
 - the exact controls hidden by the first electrical profile;
-- the initial built-in symbol set;
 - whether symbols are colorized, fixed-color, or offer both behaviors;
 - symbol size, rotation, anchor, and scale rules;
 - where marker selection lives in the current condition and object editor;

@@ -42,7 +42,7 @@ import { Z } from "../lib/ui.js";
 import { ftIn } from "../lib/units";
 import { describeConditionEdit } from "../lib/proposals.js";
 import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "../lib/coverageUnits.js";
-import { OBJECT_SYMBOLS, resolveObjectStyle } from "../lib/objectPresentation.js";
+import { objectSymbolsByGroup, resolveObjectStyle, sequenceObjectLabelPrefix } from "../lib/objectPresentation.js";
 import { ObjectSymbolPreview } from "./ObjectMarker.jsx";
 
 export const PANEL_MIN_W = 240;
@@ -503,6 +503,7 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
   // the horizontal space instead of clumping in a corner, split by thin rules.
   const isRow = layout === "row";
   const objectStyle = resolveObjectStyle(c);
+  const symbolGroups = objectSymbolsByGroup();
   const patchObjectStyle = (patch) => onUpdateCond({
     object_style: { ...(c.object_style && typeof c.object_style === "object" && !Array.isArray(c.object_style) ? c.object_style : {}), ...patch },
   });
@@ -544,16 +545,23 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
             <select name="condition-object-symbol" value={objectStyle.symbol_id}
               onChange={(e) => patchObjectStyle({ symbol_id: e.target.value })}
               style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
-              {OBJECT_SYMBOLS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              {symbolGroups.map((group) => <optgroup key={group.id} label={group.label}>
+                {group.symbols.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </optgroup>)}
             </select>
           </span>
         ) : (
-          <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
-            {OBJECT_SYMBOLS.map((s) => <button key={s.id} title={s.label} aria-label={s.label}
-              onClick={() => patchObjectStyle({ symbol_id: s.id })}
-              style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: objectStyle.symbol_id === s.id ? `2px solid ${activeColor}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color: activeColor, cursor: "pointer" }}>
-              <ObjectSymbolPreview symbolId={s.id} color={activeColor} size={20} />
-            </button>)}
+          <span style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 4 }}>
+            {symbolGroups.map((group) => <span key={group.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 76, flex: "0 0 76px", color: "var(--ink-muted)", fontSize: 9.5 }}>{group.label}</span>
+              <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
+                {group.symbols.map((s) => <button key={s.id} title={s.label} aria-label={s.label}
+                  onClick={() => patchObjectStyle({ symbol_id: s.id })}
+                  style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: objectStyle.symbol_id === s.id ? `2px solid ${activeColor}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color: activeColor, cursor: "pointer" }}>
+                  <ObjectSymbolPreview symbolId={s.id} color={activeColor} size={20} />
+                </button>)}
+              </span>
+            </span>)}
           </span>
         ))}
         <span style={{ color: "var(--ink-muted)", marginLeft: 2 }}>Label</span>
@@ -569,8 +577,8 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
           onChange={(e) => patchObjectStyle({ label_text: e.target.value })} placeholder="plan label"
           style={{ ...ip, width: 86 }} />}
         {objectStyle.label_mode === "sequence" && <>
-          <input name="condition-object-label-prefix" value={typeof c.object_style?.label_prefix === "string" ? c.object_style.label_prefix : ""}
-            onChange={(e) => patchObjectStyle({ label_prefix: e.target.value })} placeholder="CAM-" title="Prefix written before each automatically assigned number"
+          <input name="condition-object-label-prefix" value={sequenceObjectLabelPrefix(c)}
+            onChange={(e) => patchObjectStyle({ label_prefix: e.target.value })} placeholder="CAM-" title="Prefix written before each automatically assigned number; defaults from the condition tag"
             style={{ ...ip, width: 66, fontFamily: "var(--f-mono)" }} />
           <span style={{ color: "var(--ink-muted)" }}>next</span>
           <input name="condition-object-label-next" type="number" min="1" step="1" value={Number.isInteger(c.object_style?.next_sequence) && c.object_style.next_sequence > 0 ? c.object_style.next_sequence : 1}
