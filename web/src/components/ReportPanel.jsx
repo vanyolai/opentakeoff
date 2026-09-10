@@ -26,6 +26,7 @@ import { normalizeLogoToPng, loadProfiles, saveProfiles, activeProfile, updateAc
 import { resolveBranding, loadBrandingSelection, saveBrandingSelection } from "../lib/branding.js";
 import { projectIdFromUrl } from "../lib/store.js";
 import { describeConditionEdit, proposedConditionEditRows } from "../lib/proposals.js";
+import { ConditionMark } from "./ObjectMarker.jsx";
 
 const num = (v, d = 1) => (Number(v) || 0).toLocaleString(undefined, { maximumFractionDigits: d });
 
@@ -48,6 +49,7 @@ const sheetNum = (v, d = 1) => {
 };
 
 export default function ReportPanel({ projectName, onProjectName, conditions, shapes, sheetLabel, sheetDims, onMarkedSet, markedSetDark, onClose, markups = [], rfis = [], scaleInfo = [], provenanceCounters = null, clientInfo = {}, onClientInfo, conditionColumns = [], shapeLabels = [], units = "imperial", rollByCond = null, conditionEditProposals = [] }) {
+  const conditionById = useMemo(() => new Map(conditions.map((condition) => [condition.id, condition])), [conditions]);
   // proposals (#365): a pending condition-edit diff prints BESIDE the current
   // values — the row's numbers are always the current knobs; the chip says
   // what the agent proposed, and the JSON export carries the same rows.
@@ -389,7 +391,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         return (
           <td key={col.key} style={{ ...td, textAlign: "left" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 12, height: 12, background: r.color, display: "inline-block", border: "1px solid var(--ink-faint)" }} />
+              <ConditionMark condition={conditionById.get(r.id)} color={r.color} variant="legend" />
               <strong style={{ fontFamily: "var(--f-mono)", fontWeight: 600 }}>{r.finish_tag}</strong>
               {r.multiplier > 1 && <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>×{r.multiplier}</span>}
             </span>
@@ -844,7 +846,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                       <tr key={r.id}>
                         <td style={{ ...td, textAlign: "left" }}>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ width: 12, height: 12, background: r.color, display: "inline-block", border: "1px solid var(--ink-faint)" }} />
+                            <ConditionMark condition={conditionById.get(r.id)} color={r.color} variant="legend" />
                             <strong style={{ fontFamily: "var(--f-mono)", fontWeight: 600 }}>{r.finish_tag}</strong>
                             {r.multiplier > 1 && <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>×{r.multiplier}</span>}
                           </span>
