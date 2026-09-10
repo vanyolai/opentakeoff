@@ -88,6 +88,8 @@ import { sanitizeSheetLevels } from "../lib/sheetLevels.js";
 import { sanitizeConditionColumns, sanitizeConditionAttrs, renameColumnValue, columnLabel } from "../lib/conditionColumns.js";
 import { sanitizeShapeLabels, sanitizeShapeLabelsOnShapes, renameShapeLabel, shapeLabelValue } from "../lib/shapeLabels.js";
 import { buildMarkedSetPdf, downloadBytes } from "../lib/markedset.js";
+import { allocateSequentialObjectLabels, defaultObjectStyle, newLabeledObjectInstance, resolveObjectStyle, sanitizeConditionObjectStyles, sanitizeCountObjects } from "../lib/objectPresentation.js";
+import { ObjectMarker } from "../components/ObjectMarker.jsx";
 import { repeatPlan } from "../lib/repeatTool.js";
 import { createDragCache, sheetContentSignature, dragFilename, downloadUrlEntry } from "../lib/dragOut.js";
 import { counterRows } from "../lib/liveCounter.js";
@@ -1546,7 +1548,7 @@ export default function TakeoffCanvas() {
     setConditionColumns(sanitizeConditionColumns(a.condition_columns));   // non-array/malformed → [] (unconditional set: snapshot load must not inherit pre-load columns)
     setShapeLabels(sanitizeShapeLabels(a.shape_labels));   // same unconditional-set rule: a snapshot load must not inherit the replaced project's label vocabulary
     setActiveLabel(null);   // active label is session-only — never carry one from the replaced project into a fresh/loaded one
-    const conds = sanitizeConditionAttrs(a.conditions || []);   // strips corrupt attrs values so every reader can trust them (the client_info precedent)
+    const conds = sanitizeConditionObjectStyles(sanitizeConditionAttrs(a.conditions || []));   // attrs + additive object presentation/layer seam share the load gate
     if (conds.length) { setConditions(conds); setActiveCond(conds[0].id); }
     else { const seeded = seedConditions(templatesRef.current); setConditions(seeded); setActiveCond(seeded[0].id); }   // library templates first, flooring defaults as fallback
     // palette holds condition ids — de-dupe (a hand-edited/older payload could
@@ -1564,7 +1566,7 @@ export default function TakeoffCanvas() {
     // `replace` command + reset: hydrate is a whole-array non-edit (no stamps,
     // no counters) and a loaded/restored timeline starts with EMPTY undo/redo
     // stacks — recorded inverses from the replaced project must never fire here.
-    dispatchShape({ type: "replace", shapes: sanitizeShapeLabelsOnShapes((a.shapes || []).map(normalizeAgentReview)) }, { reset: true });   // normalize legacy review flags and corrupt labels at the load boundary
+    dispatchShape({ type: "replace", shapes: sanitizeCountObjects(sanitizeShapeLabelsOnShapes((a.shapes || []).map(normalizeAgentReview))) }, { reset: true });   // normalize legacy review flags, grouping labels, and count-object overrides at the load boundary
     // normalize hydrated markups: legacy workspaces may hold markups with no id
     // (pre-dating the id field) — seed a stable id + default rfi_id so the new
     // select / edit / delete / move / RFI-link flows (all keyed on m.id) work on them.
@@ -4495,11 +4497,14 @@ export default function TakeoffCanvas() {
     for (const m of sw.matches) if (!off.has(tagKey(m))) rows.push(m);
     for (const q of sw.questions) if (q.state === "accepted") rows.push(q);
     if (!rows.length) { setCommitMsg("Nothing to commit — no matches and no accepted questions."); return; }
+    const numbered = allocateSequentialObjectLabels(condById[activeCond], rows.length);
+    if (numbered.object_style) updateCondById(activeCond, { object_style: numbered.object_style });
     // ONE dispatch = one undo step, the whole gesture — same batch discipline
     // as the MCP's set-wide commit
-    dispatchShape({ type: "add", shapes: rows.map((m) => ({
+    dispatchShape({ type: "add", shapes: rows.map((m, i) => ({
       sheet_id: sw.key, condition_id: activeCond, measure_role: "count",
       verts_norm: [[m.at[0] / sw.img.w, m.at[1] / sw.img.h]], computed: { count: 1 },
+      object: newLabeledObjectInstance(numbered.labels[i]),
       ...(activeLabel ? { label: activeLabel } : {}),
       origin: { method: "symbol_sweep", symbol: { score: m.score, rotation: m.rotation, mirrored: m.mirrored, seed: { source: "instance", sheet: sw.key, ...(m.seedRow ? { seed_instance: true } : {}) } } },
     })) });
@@ -4511,9 +4516,11 @@ export default function TakeoffCanvas() {
   function commitCount(p) {
     if (!activeCond) { setCommitMsg("Pick or add a condition first."); return; }
     const tp = panelAt(p[0]);
+    const numbered = allocateSequentialObjectLabels(condById[activeCond], 1);
+    if (numbered.object_style) updateCondById(activeCond, { object_style: numbered.object_style });
     dispatchShape({ type: "add", shapes: [{
       sheet_id: tp.key, condition_id: activeCond, measure_role: "count",
-      verts_norm: [[(p[0] - tp.xOffset) / tp.img.w, p[1] / tp.img.h]], computed: { count: 1 }, ...(activeLabel ? { label: activeLabel } : {}), origin: { method: "manual" },
+      verts_norm: [[(p[0] - tp.xOffset) / tp.img.w, p[1] / tp.img.h]], computed: { count: 1 }, object: newLabeledObjectInstance(numbered.labels[0]), ...(activeLabel ? { label: activeLabel } : {}), origin: { method: "manual" },
     }] });
   }
 
@@ -5129,7 +5136,8 @@ export default function TakeoffCanvas() {
   // `from` remembers the source sheet so paste knows same-sheet vs cross-sheet
   const clipEntry = (sel) => ({ condition_id: sel.condition_id, measure_role: sel.measure_role,
                                 verts_norm: sel.verts_norm.map((v) => [...v]), from: sel.sheet_id, height_ft: sel.height_ft,
-                                ...(sel.height_override ? { height_override: true } : {}), ...(sel.label ? { label: sel.label } : {}), ...cloneOrigin(sel.origin) });
+                                ...(sel.height_override ? { height_override: true } : {}), ...(sel.label ? { label: sel.label } : {}),
+                                ...(sel.measure_role === "count" && sel.object ? { object: { ...sel.object } } : {}), ...cloneOrigin(sel.origin) });
   function copySelected() {
     const sel = shapes.find((s) => s.id === selectedId);
     if (!sel) { setCommitMsg("Select a takeoff to copy."); return; }
@@ -5148,7 +5156,12 @@ export default function TakeoffCanvas() {
       // same sheet: nudge so the copy is visible; other sheet: same relative spot
       const vn = c.verts_norm.map(([x, y]) => (same ? [Math.min(0.999, x + offset), Math.min(0.999, y + offset)] : [x, y]));
       // != null, not truthy: an overridden height of 0 must survive the paste
-      const s = { sheet_id: tp.key, condition_id: c.condition_id, measure_role: c.measure_role, verts_norm: vn, ...(c.height_ft != null ? { height_ft: c.height_ft } : {}), ...(c.height_override ? { height_override: true } : {}), ...(c.label ? { label: c.label } : {}), ...cloneOrigin(c.origin) };
+      const numbered = c.measure_role === "count" ? allocateSequentialObjectLabels(condById[c.condition_id], 1) : { labels: [], object_style: null };
+      if (numbered.object_style) updateCondById(c.condition_id, { object_style: numbered.object_style });
+      const object = c.measure_role === "count"
+        ? { ...(c.object || {}), ...(numbered.labels[0] ? { label: numbered.labels[0] } : {}) }
+        : null;
+      const s = { sheet_id: tp.key, condition_id: c.condition_id, measure_role: c.measure_role, verts_norm: vn, ...(c.height_ft != null ? { height_ft: c.height_ft } : {}), ...(c.height_override ? { height_override: true } : {}), ...(c.label ? { label: c.label } : {}), ...(object ? { object } : {}), ...cloneOrigin(c.origin) };
       return { ...s, computed: recomputeShape(s) };
     });
     // the add command mints id/created_at; a plain add appends, so the minted
@@ -5835,6 +5848,7 @@ export default function TakeoffCanvas() {
   }
   function reassignSelected(condId) { if (selectedId) dispatchShape({ type: "reassign", ids: [selectedId], condition_id: condId }); }
   function reassignSelectedLabel(value) { if (selectedId) dispatchShape({ type: "label", ids: [selectedId], value }); }   // Select-tool single-shape re-label (#111) — value "" / null clears it; label commands never stamp
+  function renameSelectedObjectLabel(value) { if (selectedId) dispatchShape({ type: "objectLabel", ids: [selectedId], value }); }
 
   // pan/zoom the canvas to fit a condition's takeoffs on the open sheets —
   // the panel's ⌖ / double-click navigation. Fit zoom is capped so a lone
@@ -5902,6 +5916,7 @@ export default function TakeoffCanvas() {
       color: lc,            // line color
       fill: lc,             // fill color (NO_FILL for outline-only)
       hatch: HATCHES[1 + (cs.length % (HATCHES.length - 1))].id,
+      object_style: defaultObjectStyle(), // original marker + future type-level authored-layer seam
       multiplier: 1,        // ×N for identical repeated units (measure one, multiply)
       waste_pct: 0,         // flooring waste allowance (manual) — applied in the Report
       materials: [],        // supporting materials (adhesive, grout, …) with coverage rates
@@ -7516,6 +7531,7 @@ export default function TakeoffCanvas() {
   const condToTemplate = (c) => ({
     finish_tag: c.finish_tag, color: c.color, fill: c.fill, hatch: c.hatch || "solid",
     waste_pct: c.waste_pct || 0,
+    ...(c.object_style ? { object_style: { ...c.object_style } } : {}),
     ...(c.height_ft != null ? { height_ft: c.height_ft } : {}),
     ...(c.thickness_in != null ? { thickness_in: c.thickness_in } : {}),
     ...(c.laborType != null ? { laborType: c.laborType } : {}),
@@ -8788,8 +8804,8 @@ export default function TakeoffCanvas() {
                       const pending = s.origin?.reviewed === false;
                       const pDash = `${4 / z} ${3 / z}`;
                       if (s.measure_role === "count") {
-                        const [cx, cy] = pts[0], r = 7 / z;
-                        return <rect key={s.id} x={cx - r} y={cy - r} width={r * 2} height={r * 2} rx={2 / z} fill={col + (pending ? "55" : "cc")} stroke={sel ? DS.selection.color : "#fff"} strokeWidth={(sel ? 3 : 1.5) / z} strokeDasharray={pending ? `${3 / z} ${2.5 / z}` : undefined} />;
+                        const [cx, cy] = pts[0];
+                        return <ObjectMarker key={s.id} shape={s} condition={cond} cx={cx} cy={cy} zoom={z} selected={sel} pending={pending} selectionColor={DS.selection.color} />;
                       }
                       if (s.measure_role === "surface_area") {
                         return <polyline key={s.id} points={pts.map((q) => q.join(",")).join(" ")} fill="none" stroke={sel ? DS.selection.color : col} strokeOpacity={pending ? 0.85 : undefined} strokeWidth={(sel ? 4.5 : 3.5) / z} strokeDasharray={pending ? pDash : `${10 / z} ${3 / z} ${2 / z} ${3 / z}`} strokeLinecap="round" strokeLinejoin="round" />;
@@ -9737,7 +9753,20 @@ export default function TakeoffCanvas() {
               );
               const sub = (txt) => <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 2 }}>{txt}</div>;
               const foot = <div style={{ fontSize: 11.5, color: "var(--ink-muted)", marginTop: 4 }}>{shTag} · selected{selShape.origin === "agent" ? " · agent" : ""}</div>;
-              if (selShape.measure_role === "count") return <>{big(num(c.count || 1, 0), "EA")}{foot}</>;
+              if (selShape.measure_role === "count") {
+                const shownLabel = resolveObjectStyle(condById[selShape.condition_id], selShape).label;
+                return <>
+                  {big(num(c.count || 1, 0), "EA")}
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)" }}>
+                    Plan label
+                    <input key={`${selShape.id}:${shownLabel}`} defaultValue={shownLabel} placeholder="none"
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                      onBlur={(e) => { if (e.target.value.trim() !== shownLabel) renameSelectedObjectLabel(e.target.value); }}
+                      style={{ width: 92, padding: "2px 5px", borderRadius: 0, border: "1px solid var(--ink-faint)", fontFamily: "var(--f-mono)", fontSize: 11.5 }} />
+                  </label>
+                  {foot}
+                </>;
+              }
               if (selShape.measure_role === "linear") {
                 return <>{big(num(lenVal(lf, units)), lenUnit(units))}{a > 0 ? sub(`${fa(a)} border`) : null}{foot}</>;
               }

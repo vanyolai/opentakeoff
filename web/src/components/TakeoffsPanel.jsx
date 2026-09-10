@@ -42,6 +42,8 @@ import { Z } from "../lib/ui.js";
 import { ftIn } from "../lib/units";
 import { describeConditionEdit } from "../lib/proposals.js";
 import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "../lib/coverageUnits.js";
+import { OBJECT_SYMBOLS, resolveObjectStyle } from "../lib/objectPresentation.js";
+import { ObjectSymbolPreview } from "./ObjectMarker.jsx";
 
 export const PANEL_MIN_W = 240;
 export const PANEL_MAX_W = 560;
@@ -500,6 +502,10 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
   // vertically; "row" (top-bar band, wide) flows them left-to-right so they use
   // the horizontal space instead of clumping in a corner, split by thin rules.
   const isRow = layout === "row";
+  const objectStyle = resolveObjectStyle(c);
+  const patchObjectStyle = (patch) => onUpdateCond({
+    object_style: { ...(c.object_style && typeof c.object_style === "object" && !Array.isArray(c.object_style) ? c.object_style : {}), ...patch },
+  });
   const rule = () => <span aria-hidden style={{ width: 1, alignSelf: "stretch", background: "var(--ink-faint)", margin: "0 3px" }} />;
   return (
     <div style={isRow
@@ -522,6 +528,55 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
             style={{ width: 50, padding: "3px 5px", borderRadius: 0, border: "1px solid var(--ink-faint)", fontSize: 12 }} />
           <span style={{ color: "var(--ink-muted)" }}>%</span>
         </span>
+      </div>
+      {isRow && rule()}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} title="Count-object marker and plan label. Existing projects default to the original color square.">
+        <span style={{ color: "var(--ink-muted)" }}>Object</span>
+        <select name="condition-object-marker" value={objectStyle.marker}
+          onChange={(e) => patchObjectStyle({ marker: e.target.value })}
+          style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+          <option value="square">Color square</option>
+          <option value="symbol">Built-in symbol</option>
+        </select>
+        {objectStyle.marker === "symbol" && (isRow ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <ObjectSymbolPreview symbolId={objectStyle.symbol_id} color={activeColor} size={20} />
+            <select name="condition-object-symbol" value={objectStyle.symbol_id}
+              onChange={(e) => patchObjectStyle({ symbol_id: e.target.value })}
+              style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+              {OBJECT_SYMBOLS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </span>
+        ) : (
+          <span style={{ display: "inline-flex", gap: 3, flexWrap: "wrap" }}>
+            {OBJECT_SYMBOLS.map((s) => <button key={s.id} title={s.label} aria-label={s.label}
+              onClick={() => patchObjectStyle({ symbol_id: s.id })}
+              style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: objectStyle.symbol_id === s.id ? `2px solid ${activeColor}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color: activeColor, cursor: "pointer" }}>
+              <ObjectSymbolPreview symbolId={s.id} color={activeColor} size={20} />
+            </button>)}
+          </span>
+        ))}
+        <span style={{ color: "var(--ink-muted)", marginLeft: 2 }}>Label</span>
+        <select name="condition-object-label" value={objectStyle.label_mode}
+          onChange={(e) => patchObjectStyle({ label_mode: e.target.value })}
+          style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+          <option value="none">None</option>
+          <option value="tag">Condition tag</option>
+          <option value="custom">Custom</option>
+          <option value="sequence">Sequential</option>
+        </select>
+        {objectStyle.label_mode === "custom" && <input name="condition-object-label-text" value={objectStyle.label_text}
+          onChange={(e) => patchObjectStyle({ label_text: e.target.value })} placeholder="plan label"
+          style={{ ...ip, width: 86 }} />}
+        {objectStyle.label_mode === "sequence" && <>
+          <input name="condition-object-label-prefix" value={typeof c.object_style?.label_prefix === "string" ? c.object_style.label_prefix : ""}
+            onChange={(e) => patchObjectStyle({ label_prefix: e.target.value })} placeholder="CAM-" title="Prefix written before each automatically assigned number"
+            style={{ ...ip, width: 66, fontFamily: "var(--f-mono)" }} />
+          <span style={{ color: "var(--ink-muted)" }}>next</span>
+          <input name="condition-object-label-next" type="number" min="1" step="1" value={Number.isInteger(c.object_style?.next_sequence) && c.object_style.next_sequence > 0 ? c.object_style.next_sequence : 1}
+            onChange={(e) => patchObjectStyle({ next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+            title="Next number assigned when an object is placed" style={{ ...ip, width: 52 }} />
+        </>}
       </div>
       {isRow && rule()}
       {isRow ? (
