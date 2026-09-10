@@ -54,6 +54,28 @@ test("metric CSV converts measured columns and drops SY", () => {
   assert.match(imperial, /SY w\/Waste/);
 });
 
+test("metric CSV converts supporting-material coverage rates", () => {
+  const rows = [{
+    id: "c1", finish_tag: "LVT-1", shape_count: 1, multiplier: 1, waste_pct: 0,
+    floor_sf: 100, wall_sf: 0, border_sf: 0, total_sf: 100, lf: 0, ea: 0,
+    total_sf_net: 100, lf_net: 0, sy_net: 11.11,
+    materials: [
+      { name: "Adhesive", qty: 2, unit: "bucket", per: 50, basis: "area" },
+      { name: "Tape", qty: 1, unit: "roll", per: 100, basis: "linear" },
+      { name: "Clips", qty: 4, unit: "box", per: 10, basis: "count" },
+    ],
+  }];
+
+  const metric = totalsToCsv(rows, "", null, null, null, null, null, "OpenTakeoff", "metric");
+  assert.match(metric, /1 bucket \/ 4\.65 m2/);
+  assert.match(metric, /1 roll \/ 30\.48 m/);
+  assert.match(metric, /1 box \/ 10 EA/);
+
+  const imperial = totalsToCsv(rows);
+  assert.match(imperial, /1 bucket \/ 50 SF/);
+  assert.match(imperial, /1 roll \/ 100 LF/);
+});
+
 // ── Check-a-dimension helpers (ftIn / fmtCheckLen / parseLenInput) ──────────
 
 test("ftIn renders drawing-style feet-and-inches", () => {

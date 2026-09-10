@@ -220,7 +220,7 @@ A scale that arrives from an agent takeoff (an MCP session's export, imported he
 
 ### Metric
 
-The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, and the Marked Set legend read in m² / m (the SY column retires), and Calibrate takes meters. It's display only—takeoffs are stored unit-agnostically, so flipping it never changes a measurement. Supporting-material coverage rates stay as entered.
+The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, Excel, and the Marked Set legend read in m² / m (the SY column retires), and Calibrate takes meters. Supporting-material coverage fields and presets also follow the active units. It's display only—takeoffs and coverage rates keep their internal values, so flipping the toggle never changes a measurement or an order quantity.
 
 ---
 
@@ -263,7 +263,7 @@ Open **Supporting Materials** on a condition. Two free-text fields sit above the
 
 Below that, list what actually goes on the order: adhesive, sealer, polyurethane, thinset, grout, cove-base adhesive. Each line carries:
 
-- a **coverage rate**—*1 unit per N*—and a **basis**: floor SF, linear LF, each, or **seam LF**;
+- a **coverage rate**—*1 unit per N*—and a **basis**: floor SF or m², linear LF or m, each, or **seam LF or m**, according to the active unit system;
 - a **round up** flag (on by default—you buy whole buckets and bags);
 - a **preset picker** for adhesive and mortar lines: real trowel-notch and roller spread rates (PSA rollers at 300 SF/gal down to coarse wood notches at 40 SF/gal; mortar trowels from 90 to 30 SF per 50-lb bag). Generic industry-typical values—always verify against the product data sheet;
 - for **grout** lines, an inline **calculator**: enter tile L × W × thickness, joint width (1/32″–1/2″), and bag weight, and the SF/bag rate derives itself, writing its work into the note (`12×24×3/8″ @ 1/8″ · 25 lb`);

@@ -5323,7 +5323,7 @@ export default function TakeoffCanvas() {
   // ── live counter (mock) — floating running totals, parked anywhere ──
   // Measured quantities per condition (the number that moves as you trace),
   // shaped from the ONE quantity computer (lib/totals.js conditionTotals).
-  const liveCounterRows = useMemo(() => counterRows(conditionTotals(conditions, shapes), activeCond), [conditions, shapes, activeCond]);
+  const liveCounterRows = useMemo(() => counterRows(conditionTotals(conditions, shapes), activeCond, units), [conditions, shapes, activeCond, units]);
 
   // ── inline text editor — a screen-space <input> overlay (retires window.prompt).
   // An HTML input can't live in the zoom/pan-transformed SVG group, so it is

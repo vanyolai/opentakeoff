@@ -326,7 +326,8 @@ a printed dimension string, type what the drawing says, and get a graded verdict
 1%, amber within 5%, red past it) plus a one-click **Recalibrate to this**. Every scale
 acceptance drops an ephemeral calibrated ruler bar on the sheet, so a 2×-off scale is obvious
 before anything gets traced. Imperial or metric (m²/m, 1:50-style ratios) is a display toggle—takeoffs
-are stored unit-agnostically, so flipping it never changes a measurement.
+and supporting-material coverage rates follow the active display units without rewriting the stored
+measurement or material data.
 
 ### Conditions, materials, and the buy list
 A **condition** is one finish (LVP, carpet, tile, base…), carrying a line/fill color, a **CAD
@@ -338,8 +339,9 @@ rides along as read-only report columns.
 
 **Supporting Materials** is the layer most takeoff tools punt on: per condition, a labor type
 and a subfloor type, plus the consumables that actually go on the order—adhesive, sealer,
-thinset, grout, cove-base adhesive—each with a **coverage rate** and a **basis** (floor SF /
-linear LF / each / **figured seam LF**). Order quantity derives automatically: measured ÷
+thinset, grout, cove-base adhesive—each with a **coverage rate** and a **basis** (floor SF or m² /
+linear LF or m / each / **figured seam LF or m**). Coverage inputs, presets, and exports follow the
+active unit system. Order quantity derives automatically: measured ÷
 coverage, **rounded up** to whole units. Adhesive and mortar lines get coverage presets; grout lines get a calculator that
 derives SF/bag from tile size, thickness, joint width, and bag weight. Preset values are
 industry-typical round numbers—always verify against the product data sheet.
@@ -473,7 +475,7 @@ plus a vision-capable model id.
 | **Measure** | One-Click Area (vector flood + raster fallback — temporarily gated), Area, Rectangle, Linear, Curved Line, Surface Area, Count, Cut Out deducts, ⟂ Transitions, Zone check—imperial or metric |
 | **Drawing aids** | 45°/90° angle lock with `⇧` hard-lock, live angle + segment-length readout at the cursor, endpoint Snap (beta) |
 | **Conditions** | Color + CAD hatch per finish, waste %, ×N multiplier, wall height, border thickness, schedule import, browser-wide library |
-| **Supporting Materials** | Labor + subfloor type, coverage rate × basis (incl. figured seam LF) → rounded order quantities, trowel/roller presets, grout calculator |
+| **Supporting Materials** | Labor + subfloor type, imperial/metric coverage rate × basis (incl. figured seam length) → rounded order quantities, trowel/roller presets, grout calculator |
 | **Roll goods** | Per-condition roll setup → lanes, seams, multi-roll splits, to-scale cuts with drag-to-reorder nesting, Roll Order LF + Rolls + figured Seam LF on every export |
 | **Multi-sheet** | Sheet gallery, tabs and side-by-side groups, Regroup, levels, **stitching across a match line**, PDF layer roles |
 | **Report** | Per-condition Floor/Wall/Border SF, LF, EA, SY with and without waste, plus the combined buy list; columns, grouping, saved templates |

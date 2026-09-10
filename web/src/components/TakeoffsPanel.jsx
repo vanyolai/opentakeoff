@@ -41,6 +41,7 @@ import { hasRollSetup, mintRollSetup } from "../lib/rollTakeoff.js";
 import { Z } from "../lib/ui.js";
 import { ftIn } from "../lib/units";
 import { describeConditionEdit } from "../lib/proposals.js";
+import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "../lib/coverageUnits.js";
 
 export const PANEL_MIN_W = 240;
 export const PANEL_MAX_W = 560;
@@ -169,7 +170,7 @@ function LibDraftInput({ name, value, number, placeholder, width, onCommitText }
 // Coverage preset picker — shared by the condition-line editor and the
 // Materials tab so a library "Adhesive" and an attached line offer the same
 // notch/roller list. Renders nothing when the kind has no preset table.
-function CoveragePresetSelect({ material: m, onPick }) {
+function CoveragePresetSelect({ material: m, units = "imperial", onPick }) {
   const presets = (m.basis || "area") === "area" ? MATERIAL_PRESETS[materialKind(m)] : undefined;
   if (!presets) return null;
   return (
@@ -178,7 +179,11 @@ function CoveragePresetSelect({ material: m, onPick }) {
       title="Coverage preset — trowel notch / spread rate. Generic industry-typical values; verify against the product data sheet."
       style={{ ...ip, background: "var(--paper-bright)" }}>
       <option value="">preset…</option>
-      {presets.map((t) => <option key={t.label} value={t.label}>{t.label} · {t.per} SF/{m.unit || "unit"}</option>)}
+      {presets.map((t) => (
+        <option key={t.label} value={t.label}>
+          {t.label} · {Number(coverageToDisplay(t.per, "area", units).toFixed(2))} {coverageBasisLabel("area", units)}/{m.unit || "unit"}
+        </option>
+      ))}
     </select>
   );
 }
@@ -186,7 +191,7 @@ function CoveragePresetSelect({ material: m, onPick }) {
 // Editable supporting-materials rows for a condition (coverage-derived order qty).
 function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library, libById, overridden, onRevert, onAttach, onPromote,
     twin = false, parentTag = "", dropped = [], parentRows = [], onFollowFamilyRow, onRestoreDroppedRow,
-    heightFt = 0 }) {
+    heightFt = 0, units = "imperial" }) {
   // library link affordances (#47, all optional so the editor works standalone):
   // linked lines show ⛓; a field differing from its library entry tints amber
   // and grows a per-field ↺ revert; unlinked lines can be promoted to the library
@@ -240,20 +245,81 @@ function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library, libByI
             <input name="material-unit" value={m.unit} onChange={(e) => onUpdate(m.id, { unit: e.target.value })} placeholder="unit" style={{ ...ip, width: 60, ...(ov("unit") ? { border: OV } : {}) }} />
             {ov("unit") && rv(m, "unit")}
             <span style={{ color: "var(--ink-muted)" }}>per</span>
-            <input name="material-per" type="number" min="0" step="any" value={m.per || ""} onChange={(e) => onUpdate(m.id, { per: Math.max(0, parseFloat(e.target.value) || 0) })} placeholder="0" style={{ ...ip, width: 66, ...(ov("per") ? { border: OV } : {}) }} />
+            <input
+              name="material-per"
+              type="number"
+              min="0"
+              step="any"
+              value={
+                m.per
+                  ? Number(
+                      coverageToDisplay(
+                        m.per,
+                        m.basis || "area",
+                        units
+                      ).toFixed(6)
+                    )
+                  : ""
+              }
+              onChange={(e) => {
+                const shown = Math.max(0, parseFloat(e.target.value) || 0);
+                onUpdate(m.id, {
+                  per: coverageFromDisplay(
+                    shown,
+                    m.basis || "area",
+                    units
+                  ),
+                });
+              }}
+              placeholder="0"
+              style={{ ...ip, width: 66, ...(ov("per") ? { border: OV } : {}) }}
+            />
             {ov("per") && rv(m, "per")}
-            <select name="material-basis" value={m.basis || "area"} onChange={(e) => onUpdate(m.id, { basis: e.target.value })} style={{ ...ip, background: "var(--paper-bright)", ...(ov("basis") ? { border: OV } : {}) }}>
-              <option value="area">floor SF</option>
-              <option value="linear">linear LF</option>
+            <select
+              name="material-basis"
+              value={m.basis || "area"}
+              onChange={(e) => {
+                const oldBasis = m.basis || "area";
+                const newBasis = e.target.value;
+
+                // Keep the number currently visible to the user when changing basis.
+                const shown = coverageToDisplay(m.per, oldBasis, units);
+
+                onUpdate(m.id, {
+                  basis: newBasis,
+                  per: coverageFromDisplay(shown, newBasis, units),
+                });
+              }}
+              style={{
+                ...ip,
+                background: "var(--paper-bright)",
+                ...(ov("basis") ? { border: OV } : {})
+              }}
+            >
+              <option value="area">
+                {units === "metric" ? "floor m²" : "floor SF"}
+              </option>
+              <option value="linear">
+                {units === "metric" ? "linear m" : "linear LF"}
+              </option>
               <option value="count">each</option>
-              <option value="seam_lf" title="Figured seam length from the roll layout — 0 until this condition carries a roll setup">seam LF</option>
+              <option
+                value="seam_lf"
+                title="Figured seam length from the roll layout — 0 until this condition carries a roll setup"
+              >
+                {units === "metric" ? "seam m" : "seam LF"}
+              </option>
             </select>
             {ov("basis") && rv(m, "basis")}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: ov("round") ? "var(--c-warning)" : "var(--ink-muted)" }} title="Round up to whole units (you buy whole buckets/bags)">
               <input name="material-round" type="checkbox" checked={m.round !== false} onChange={(e) => onUpdate(m.id, { round: e.target.checked })} />round up
             </label>
             {ov("round") && rv(m, "round")}
-            <CoveragePresetSelect material={m} onPick={(patch) => onUpdate(m.id, patch)} />
+            <CoveragePresetSelect
+              material={m}
+              units={units}
+              onPick={(patch) => onUpdate(m.id, patch)}
+            />
             <input name="material-note" value={m.note || ""} onChange={(e) => onUpdate(m.id, { note: e.target.value })} placeholder="note (coats, trowel…)" style={{ ...ip, width: 150, ...(ov("note") ? { border: OV } : {}) }} />
             {ov("note") && rv(m, "note")}
             {!lm && onPromote && (
@@ -358,7 +424,14 @@ function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library, libByI
           title="Attach a material from the library — the line copies the library values and stays linked"
           style={{ ...ip, marginLeft: 6, background: "var(--paper-bright)", color: "var(--ink-muted)" }}>
           <option value="">+ from library…</option>
-          {library.map((lm) => <option key={lm.id} value={lm.id}>{lm.name || "(unnamed)"}{lm.per ? ` · ${lm.per}/${lm.unit || "?"}` : ""}</option>)}
+          {library.map((lm) => (
+            <option key={lm.id} value={lm.id}>
+              {lm.name || "(unnamed)"}
+              {lm.per
+                ? ` · ${Number(coverageToDisplay(lm.per, lm.basis || "area", units).toFixed(2))} ${coverageBasisLabel(lm.basis || "area", units)}/${lm.unit || "?"}`
+                : ""}
+            </option>
+          ))}
         </select>
       )}
     </>
@@ -1095,7 +1168,7 @@ function TakeoffsPanel({
               twin={!!c.variant_of} parentTag={(conditions.find((x) => x.id === c.variant_of) || {}).finish_tag || ""}
               dropped={c.materials_dropped || []} parentRows={(conditions.find((x) => x.id === c.variant_of) || {}).materials || []}
               onFollowFamilyRow={onFollowFamilyRow} onRestoreDroppedRow={onRestoreDroppedRow}
-              heightFt={c.height_ft} />
+              heightFt={c.height_ft} units={units} />
             {/* Duplicate, inline — deliberately NOT a window.prompt: those freeze a
                 CDP/automation-driven session dead, and this panel is scripted in demos. */}
             {onDuplicateCondition && (twinDraft.id === c.id ? (
@@ -1282,18 +1355,64 @@ function TakeoffsPanel({
                     <span style={{ color: "var(--ink-muted)" }}>1</span>
                     <input name="library-material-unit" value={lm.unit} onChange={(e) => onUpdateLibMaterial(lm.id, { unit: e.target.value })} placeholder="unit" style={{ ...ip, width: 54 }} />
                     <span style={{ color: "var(--ink-muted)" }}>per</span>
-                    <LibDraftInput name="library-material-per" number value={lm.per || ""} placeholder="0" width={62}
-                      onCommitText={(t) => onUpdateLibMaterial(lm.id, { per: Math.max(0, parseFloat(t) || 0) })} />
-                    <select name="library-material-basis" value={lm.basis || "area"} onChange={(e) => onUpdateLibMaterial(lm.id, { basis: e.target.value })} style={{ ...ip, background: "var(--paper-bright)" }}>
-                      <option value="area">floor SF</option>
-                      <option value="linear">linear LF</option>
+                    <LibDraftInput name="library-material-per" number value={lm.per ? Number(coverageToDisplay(lm.per, lm.basis || "area", units).toFixed(6)) : ""}
+                      placeholder="0" width={62} onCommitText={(t) => {
+                        const shown = Math.max(0, parseFloat(t) || 0);
+
+                        onUpdateLibMaterial(lm.id, {
+                          per: coverageFromDisplay(
+                            shown,
+                            lm.basis || "area",
+                            units
+                          ),
+                        });
+                      }}
+                    />
+                    <select name="library-material-basis" value={lm.basis || "area"} onChange={(e) => {
+                        const oldBasis = lm.basis || "area";
+                        const newBasis = e.target.value;
+
+                        const shown = coverageToDisplay(
+                          lm.per,
+                          oldBasis,
+                          units
+                        );
+
+                        onUpdateLibMaterial(lm.id, {
+                          basis: newBasis,
+                          per: coverageFromDisplay(
+                            shown,
+                            newBasis,
+                            units
+                          ),
+                        });
+                      }}
+                      style={{
+                        ...ip,
+                        background: "var(--paper-bright)"
+                      }}
+                    >
+                      <option value="area">
+                        {units === "metric" ? "floor m²" : "floor SF"}
+                      </option>
+
+                      <option value="linear">
+                        {units === "metric" ? "linear m" : "linear LF"}
+                      </option>
+
                       <option value="count">each</option>
-                      <option value="seam_lf" title="Figured seam length from the roll layout — 0 until the condition carries a roll setup">seam LF</option>
+
+                      <option
+                        value="seam_lf"
+                        title="Figured seam length from the roll layout — 0 until this condition carries a roll setup"
+                      >
+                        {units === "metric" ? "seam m" : "seam LF"}
+                      </option>
                     </select>
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--ink-muted)" }} title="Round up to whole units">
                       <input name="library-material-round" type="checkbox" checked={lm.round !== false} onChange={(e) => onUpdateLibMaterial(lm.id, { round: e.target.checked })} />round up
                     </label>
-                    <CoveragePresetSelect material={lm} onPick={(patch) => onUpdateLibMaterial(lm.id, patch)} />
+                    <CoveragePresetSelect material={lm} units={units} onPick={(patch) => onUpdateLibMaterial(lm.id, patch)} />
                     <LibDraftInput name="library-material-note" value={lm.note || ""} placeholder="note" width={120}
                       onCommitText={(t) => onUpdateLibMaterial(lm.id, { note: t })} />
                   </div>
