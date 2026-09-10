@@ -45,6 +45,7 @@ import { stitchPagePlan, memberEmbed } from "./stitches";
 import { pdfDashFor, boostForDark, clampWeight } from "./lineStyles.js";
 import { dimLabel } from "./units";
 import { sourcePageMode, sourceStampNote, noCanvasForRasterMessage } from "./markedsetSource.js";
+import { objectSymbol, resolveObjectStyle } from "./objectPresentation.js";
 
 const COBALT = "#1f3fc7";
 const DEDUCT_RED = "#b03a26";
@@ -665,7 +666,29 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
         chip(shapeChip(s, cond, M), mid[0], mid[1] - 14, col);
       } else if (s.measure_role === "count") {
         const [px, py] = toPage(pts[0][0], pts[0][1]);
-        pg.drawEllipse({ x: px, y: py, xScale: 4.5, yScale: 4.5, borderColor: col, borderWidth: 1.2, color: col, opacity: 0.35 });
+        const appearance = resolveObjectStyle(cond, s);
+        if (appearance.marker === "square") {
+          // Legacy marked sets used this dot for the original color-square
+          // canvas marker; keep that print output unchanged for old projects.
+          pg.drawEllipse({ x: px, y: py, xScale: 4.5, yScale: 4.5, borderColor: col, borderWidth: 1.2, color: col, opacity: 0.35 });
+        } else {
+          const symbol = objectSymbol(appearance.symbol_id);
+          const k = 5 / (9 * ptScale); // symbol coordinate → image px; outer radius prints at 5 pt
+          pg.drawEllipse({ x: px, y: py, xScale: 5.8, yScale: 5.8, color: dark ? rgb(0.08, 0.1, 0.12) : rgb(1, 1, 1), opacity: 0.82 });
+          for (const [dx, dy, rr] of symbol.circles || []) {
+            const [cx, cy] = toPage(pts[0][0] + dx * k, pts[0][1] + dy * k);
+            pg.drawEllipse({ x: cx, y: cy, xScale: rr * k * ptScale, yScale: rr * k * ptScale, borderColor: col, borderWidth: 1.05 });
+          }
+          for (const [x1, y1, x2, y2] of symbol.segments || []) {
+            line(pts[0][0] + x1 * k, pts[0][1] + y1 * k, pts[0][0] + x2 * k, pts[0][1] + y2 * k, col, 1.05);
+          }
+          for (const polyline of symbol.polylines || []) {
+            for (let i = 1; i < polyline.length; i++) {
+              line(pts[0][0] + polyline[i - 1][0] * k, pts[0][1] + polyline[i - 1][1] * k, pts[0][0] + polyline[i][0] * k, pts[0][1] + polyline[i][1] * k, col, 1.05);
+            }
+          }
+        }
+        if (appearance.label) text(appearance.label, pts[0][0] + 12 / ptScale, pts[0][1] + 3 / ptScale, 7.5, col, bold);
       }
     }
     // highlights draw FIRST (behind) so their translucent fill never dims the

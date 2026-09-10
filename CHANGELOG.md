@@ -2,6 +2,13 @@
 
 All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 
+## Unreleased — Count-object symbols, plan labels, and the authored-layer seam
+
+### Added
+- **A condition can draw its count objects as the original color marker or one of five built-in plan symbols** (outlet, switch, light, data, camera). The choice follows the condition through project JSON, archives, imports, templates, the canvas, and the Marked Set PDF; legacy conditions still resolve to the original marker with no label.
+- **Plan labels for count objects:** none, the condition tag, custom text, or a sequential prefix such as `CAM-`. Sequential placement writes `CAM-1`, `CAM-2`, … onto the individual object and advances the condition's next number; selecting a count lets the operator edit that issued label without renumbering any other object.
+- **Future authored layers are part of the object model now.** `condition.object_style.layer_id` is the type default and `countShape.object.layer_id` is a presence-aware instance override. Layer-management UI is intentionally deferred, but canvas/export consumers already share the resolver so adding it will not require a project-data migration.
+
 ## Unreleased — Metric supporting-material coverage and live counter
 
 ### Changed

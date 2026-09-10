@@ -96,6 +96,9 @@ second use is not a side effect; see [the data layer](#the-data-layer--why-this-
 
 ## Recently shipped
 
+- **Count objects that read like a plan**—keep the original color marker or choose a built-in
+  outlet, switch, light, data, or camera symbol; show the condition tag, custom text, or
+  automatically issue stable labels such as `CAM-1`, `CAM-2`, …
 - **Stitched sheets**—a floor split across a match line becomes one working surface; a room
   that crosses the seam traces as one shape, One-Click included
   ([#161](https://github.com/Kentucky-ai/opentakeoff/issues/161))

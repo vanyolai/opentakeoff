@@ -10,11 +10,19 @@ import { STALE_TAB_MESSAGE } from "./store.js";
 import { mintUuid, nowIso } from "./provenance.js";
 import { instantiateMaterial } from "./materials.js";
 import { PALETTE } from "../components/hatches.jsx";
+import { defaultObjectStyle, sanitizeObjectStyle } from "./objectPresentation.js";
 import {
   MIN_SCALE, MAX_SCALE,
   QUALITY_CEILING, MAX_CANVAS_DIM, MAX_PANEL_AREA,
   FLOORING_DEFAULTS,
 } from "./canvasConstants.js";
+
+const templateObjectStyle = (raw) => {
+  const style = sanitizeObjectStyle(raw) || defaultObjectStyle();
+  // The issued number is project state, not a house-template default. A fresh
+  // condition starts its own run while retaining the prefix and marker setup.
+  return style.label_mode === "sequence" ? { ...style, next_sequence: 1 } : style;
+};
 
 // Largest pdf.js render scale a wPt×hPt-point page can use within the base budget;
 // prefers the baseline RENDER_SCALE, never above the ceiling — and never above the
@@ -59,6 +67,7 @@ export const instantiateTemplate = (t) => ({
   id: uid("cnd"), created_at: nowIso(), finish_tag: t.finish_tag || "?",
   color: t.color || PALETTE[0], fill: t.fill ?? t.color ?? PALETTE[0],
   hatch: t.hatch || "solid", multiplier: 1, waste_pct: Number(t.waste_pct) || 0,
+  object_style: templateObjectStyle(t.object_style),
   ...(t.height_ft != null ? { height_ft: t.height_ft } : {}),
   ...(t.thickness_in != null ? { thickness_in: t.thickness_in } : {}),
   ...(t.laborType != null ? { laborType: t.laborType } : {}),
