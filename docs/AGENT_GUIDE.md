@@ -162,6 +162,10 @@ rooms share 34 LF of wall would be a wrong number with a machine's confidence be
   seam-crossing room needs their stitch in the app. Never approximate one by combining sheets
   yourself. (A stitched takeoff round-tripped through `import_takeoff` → `export_takeoff` comes
   back without its stitches; when a stitch is in play, the app's own save is the one to keep.)
+- **Revision history.** MCP takeoff export is a current document, not the browser's snapshot
+  store or PDF revision history. A browser `.otk` archive carries current takeoff/plan data,
+  but also omits those histories. Never claim an archive or current takeoff reconstructs past
+  revisions; see the [tested transport boundaries](../protocol/COMPATIBILITY.md#executable-transport-matrix).
 - **The estimator's `APPROVED` seal.** `mark_verdict` takes no actor argument, so there is no
   input to misuse; `delete_verdict` refuses a human seal outright.
 - **Confirming a scale.** Only a human act in the canvas clears `confirmed: false`.
@@ -173,7 +177,7 @@ rooms share 34 LF of wall would be a wrong number with a machine's confidence be
 
 ## 6. Staged tool exposure
 
-By default every client gets all 40 tool schemas on `tools/list`—the flat contract every
+By default every client gets all <!--tool-count-->53<!--/tool-count--> tool schemas on `tools/list`—the flat contract every
 published client already expects.
 
 Fifty-two descriptions is real token weight for a session that may never touch half of them, so the
@@ -183,7 +187,7 @@ server can stage the surface along the workflow it already teaches:
 OPENTAKEOFF_MCP_STAGED_TOOLS=1 npx -y opentakeoff-mcp
 ```
 
-Staged, only the **setup** stage starts enabled—11 tools that orient you: `load_plan`,
+Staged, only the **setup** stage starts enabled—<!--tool-count-setup-->11<!--/tool-count-setup--> tools that orient you: `load_plan`,
 `sheet_info`, `set_scale`, `sheet_graph`, `resolve_tag`, `find_schedule`, `read_sheet_text`,
 `find_text`, `sheet_context`, `get_sheet_vectors`, `view_sheet`—plus one opener, `open_tool_stage`. Call it with
 `"measure"`, `"revise"`, or `"handoff"` and that group's tools enable and fire
@@ -202,7 +206,7 @@ The stages are the same phase structure the instructions already describe in pro
 **When to turn it on:** your client honors `tools/list_changed` (Claude Code, Claude Desktop,
 anything built against the current spec) *and* you care about the context cost of the tool list.
 **When to leave it off:** a client that reads the tool list once at startup—there, a staged
-server looks like a server with 11 tools that refuses everything else.
+server exposes only the setup tools and `open_tool_stage` until its tool list is refreshed.
 
 Staging is context economy, not a permission boundary. Nothing is safer when a stage is closed;
 the safety lives in the refusals, the scale gate, and the pencil-vs-ink split, all of which hold
@@ -292,3 +296,33 @@ next."*
 New agent measurements, including `measure_polygon` and `measure_line`, explicitly carry `origin.reviewed: false`. Legacy agent records without the flag are normalized on import and browser reload. Explicit prior human approval is preserved. No new review gate is introduced.
 
 On the browser agent surface, `one_click` returns retained interior voids as `verts_norm_holes`. Pass those rings unchanged alongside `verts_norm` to `propose_shapes`; preview and acceptance use the full geometry for area and perimeter.
+
+## Geometry accuracy in practice
+
+Follow [Geometry from source to review](GEOMETRY_WORKFLOW.md) when tracing a real plan. It explains which geometry to commit, how to verify the overlay, and how to make deductions visible to the estimator. The ring is what fails, not the total: put every vertex on the innermost wall-face stroke from `get_sheet_vectors`, cross doors on the wall centerline, wrap columns and stubs, never follow hatch or a door leaf, and look at a tight `view_sheet` overlay crop of each ring before the next one. The rule set is packaged at `takeoff://wiki/workflows`.
+
+## Geometry review cleanup
+
+Use the [generated tool index](MCP_TOOL_INDEX.md) for the
+<!--tool-count-->53<!--/tool-count--> default tools, their stages and required arguments.
+The [geometry workflow](GEOMETRY_WORKFLOW.md) is the source-to-handoff route.
+
+- Shorten a note with `list_annotations` then `edit_annotation`; empty text clears
+  it and `undo_last` restores it. An RFI-linked note requires review in the browser
+  register. Text edits never create approval or change measured geometry.
+- A positive overlap below 0.01 SF remains flagged with a note; machine-precision
+  residue alone does not request a geometry correction. Inspect meaningful
+  overlaps, and use material coverage rows for supporting materials.
+- Locate base and wall openings with explicit runs and `cut_out`. Numeric
+  `derive_base` allowances have no opening locations; clipping such a derived
+  perimeter refuses. Trace the installed runs with `measure_line` instead.
+
+## Packaged knowledge
+
+Start with `takeoff://wiki` when you need orientation, then read only the page
+for the current task. The [same index](wiki/README.md) is readable on GitHub.
+`takeoff://wiki/mcp` routes tool selection and coordinates;
+`takeoff://wiki/workflows` covers measurement and human stitching;
+`takeoff://wiki/protocol` states record and authority boundaries.
+Resources remain available before loading a plan and while tool stages are
+closed. They do not measure, change state or create approval.

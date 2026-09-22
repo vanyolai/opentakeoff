@@ -1,3 +1,4 @@
+import { annotationScene, pathString } from './annotationTools.js';
 // Marked-Set PDF export — distribute the takeoff off-app, fully client-side.
 //
 // One click builds a distribution-ready PDF: every sheet that carries takeoff
@@ -43,6 +44,9 @@ import { rfiStatus, liveRfis } from "./rfi.js";
 import { RENDER_SCALE, parseSheetKey, sheetBaseLabelFromKey } from "./sheets";
 import { stitchPagePlan, memberEmbed } from "./stitches";
 import { pdfDashFor, boostForDark, clampWeight } from "./lineStyles.js";
+// Notes burn as the block the canvas drew them as: NOTE_PT, wrapped at three
+// inches, anchored baseline-left (lib/markupText is the one owner of that layout).
+import { NOTE_PT, layoutNote, noteBox, lineBaseline } from "./markupText.js";
 import { dimLabel } from "./units";
 import { sourcePageMode, sourceStampNote, noCanvasForRasterMessage } from "./markedsetSource.js";
 import { objectSymbol, resolveObjectStyle } from "./objectPresentation.js";
@@ -235,6 +239,7 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
   // reserved but it prints nowhere — the schedule keeps the gap. An agent-
   // raised RFI prints exactly like a panel-raised one; who asked is on the
   // record (origin.actor), not on the page.
+  markups = (markups || []).filter(m => !m.reference_only);
   const rfis = liveRfis(rfisIn);
   // display-unit edge (lib/units contract): quantities arrive as internal feet;
   // metric converts at the drawn string only — legend rows, by-sheet rows, and
@@ -243,7 +248,7 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
   const uA = (sf) => (M ? sf * 0.09290304 : sf);
   const uL = (lf) => (M ? lf * 0.3048 : lf);
   const AU = M ? "m2" : "SF", LU = M ? "m" : "LF";
-  const { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle } = await import("pdf-lib");
+  const { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle, BlendMode } = await import("pdf-lib");
   const condById = Object.fromEntries(conditions.map((c) => [c.id, c]));
   // resolve a linked markup's RFI number for the on-sheet marker (ASCII, WinAnsi-safe)
   const rfiNum = new Map((rfis || []).map((r) => [r.id, r.number]));
@@ -389,7 +394,14 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
         shows(uA(r.border_sf)) ? `${num(uA(r.border_sf))} ${AU} border` : "", shows(uL(r.lf)) ? `${num(uL(r.lf))} ${LU}` : "", shows(r.ea, 0) ? `${num(r.ea, 0)} EA` : "",
       ].filter(Boolean).join(" · ");
       draw(qty || "-", { x: 190, y, size: 10, font, color: ink });
-      draw(`${c.hatch && c.hatch !== "solid" ? c.hatch + " · " : ""}waste ${r.waste_pct}% -> ${num(uA(r.total_sf_net))} ${AU}`, { x: 420, y, size: 8.5, font, color: muted });
+      const orderQty = [
+        shows(uA(r.total_sf_net)) ? `${num(uA(r.total_sf_net))} ${AU}` : "",
+        shows(uL(r.lf_net)) ? `${num(uL(r.lf_net))} ${LU}` : "",
+      ].filter(Boolean).join(" · ");
+      // Count totals have no waste-adjusted field. Do not invent an area
+      // quantity for a linear/count condition on the cover.
+      const allowance = orderQty ? `waste ${r.waste_pct}% -> ${orderQty}` : "";
+      draw([c.hatch && c.hatch !== "solid" ? c.hatch : "", allowance].filter(Boolean).join(" · "), { x: 420, y, size: 8.5, font, color: muted });
       y -= 15;
       if (y < 120) break;
     }
@@ -618,6 +630,24 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
       const [px, py] = toPage(x, y);
       pg.drawText(winAnsiSafe(t), { x: px, y: py, size, font: fnt, color: colorRgb, rotate: chipRot });
     };
+    // A note (callout / text note) as a wrapped BLOCK — the canvas's layout at
+    // pure ink size (no screen floor here: the print is exact). Widths are
+    // measured with the PDF face so no line overruns its box; the box itself is
+    // an image-px rectangle through imageDrawParams (proven on rotated pages),
+    // the lines go through text() so they carry the same rotation.
+    const noteBlock = (raw, ax, ay, colorRgb, backing) => {
+      const t = winAnsiSafe(raw);
+      const fs = NOTE_PT / ptScale;   // image px for NOTE_PT on THIS page
+      const L = layoutNote({ text: t, fontPx: fs, measure: (str) => bold.widthOfTextAtSize(str, NOTE_PT) / ptScale });
+      if (!L.lines.length) return;
+      const b = noteBox(ax, ay, L);
+      const dp = imageDrawParams(toPage, b.x0, b.y0, L.w, L.h);
+      pg.drawRectangle({
+        x: dp.x, y: dp.y, width: dp.width, height: dp.height, rotate: degrees(dp.rotateDeg),
+        color: backing, opacity: 0.92, borderColor: colorRgb, borderWidth: 0.7,
+      });
+      L.lines.forEach((ln, i) => { if (ln) text(ln, ax, lineBaseline(ay, L, i), NOTE_PT, colorRgb, bold); });
+    };
     const chip = (raw, x, y, borderRgb) => {
       const t = winAnsiSafe(raw);
       const size = 7.5;
@@ -712,7 +742,20 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
       const mcol = rgb(...hex(dark ? boostForDark(mbase) : mbase));
       const mdash = pdfDashFor(m.line_style || "solid");
       const mw = clampWeight(m.weight);   // stroke-width multiplier (markups only), default ×1
-      if (m.type === "highlight" && (m.pts || []).length >= 2) {
+      if (m.annotation_style && ["arrow", "highlight", "callout", "cloud", "text"].includes(m.type)) {
+        const scene = annotationScene(m, W, H, RENDER_SCALE);
+        const P = ([x, y]) => { const [px, py] = toPage(x, y); return [px, -py]; };
+        for (const ink of scene.paths) pg.drawSvgPath(pathString(ink.commands, P), {
+          x: 0, y: 0,
+          ...(ink.fill ? { color: rgb(...hex(ink.fill)), opacity: ink.opacity } : {}),
+          ...(ink.stroke ? { borderColor: rgb(...hex(ink.stroke)), borderWidth: ink.width * ptScale, borderOpacity: ink.opacity } : {}),
+          ...(ink.dash ? { borderDashArray: ink.dash.map(n => n * ptScale) } : {}),
+          ...(ink.blend ? { blendMode: BlendMode.Multiply } : {}),
+          borderLineCap: LineCapStyle.Round,
+        });
+        for (const ink of scene.texts) text(ink.text, ink.x, ink.y, ink.size * ptScale, rgb(...hex(ink.color)));
+        if (rlabel) { const at = m.at || m.from || m.rect?.[0] || m.pts?.[0]; if (at) text(rlabel, at[0] * W, at[1] * H - 10 / ptScale, 8, mcol, bold); }
+      } else if (m.type === "highlight" && (m.pts || []).length >= 2) {
         // freehand highlighter stroke — ink stays its own color in both export
         // modes (a highlight IS its hue); width is stored as a fraction of sheet
         // width → image px → page points. Weight (×) multiplies like the canvas.
@@ -810,7 +853,12 @@ export async function buildMarkedSetPdf({ projectName, dark, sheets, shapes, mar
           const [ptx, pty] = toPage(m.target[0] * W, m.target[1] * H);
           pg.drawSvgPath(arrowheadPath(pax, -pay, ptx, -pty, 5), { x: 0, y: 0, color: mcol, opacity: 0.9 });
         }
-        text(lbl(m.text), m.at[0] * W, m.at[1] * H, 8.5, mcol, bold);
+        noteBlock(lbl(m.text), m.at[0] * W, m.at[1] * H, mcol, dark ? rgb(0.08, 0.1, 0.12) : rgb(1, 1, 1));
+      } else if (m.type === "text" && m.at) {
+        // a plain text note — never burned before this branch existed: a note
+        // written on the canvas simply vanished from the print. Same block as a
+        // callout, on the canvas's cream backing.
+        noteBlock(lbl(m.text), m.at[0] * W, m.at[1] * H, mcol, dark ? rgb(0.08, 0.1, 0.12) : rgb(1, 0.97, 0.93));
       } else if (m.type === "svg" && m.at && Array.isArray(m.vb) && typeof m.path === "string") {
         // a vector symbol — bake local→page px, NEGATING y like every sibling path
         // (drawSvgPath internally applies scale(1,-1), so toPage output must be

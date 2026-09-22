@@ -1,5 +1,170 @@
 # Changelog
 
+## 2026-09-15 — annotation toolbar
+
+Added direct arrow, highlighter, callout, cloud-note, favorites, and annotation Sweep tools. Sweep requires confirmation in a numbered checklist, supports individual exclusions, and applies one undoable batch. Added page-relative vector PDF export and rotated-page highlight checks.
+
+## 2026-09-15 — Pin references beside the takeoff
+
+Click **Pin** beside **Sheets** in the top toolbar, then click two corners around any part of a drawing. The reference stays visible as you change sheets. Drag its header to move it, resize its corner, zoom independently, or use **Source** to return to the original region. Close the window without deleting the capture; the count beside **Pin** reopens it. Saved pins live in the project’s Captures list and stay out of marked-set PDF exports. The existing Image tool still places images on sheets.
+
+
+## Unreleased
+
+- **Downstream upstream sync through `3e72b15`.** Preserve the compact workspace, condition visibility, protocol/wiki work, geometry fixes and new measurement controls while retaining the metric material workflow and low-voltage object symbols. The self-hosted build deliberately omits the upstream Cloudflare analytics beacon, Premium request surfaces and automatic Premium prompt.
+
+- Add public Privacy Policy and Terms of Service pages at `/privacy/` and `/terms/`, linked from the in-app guide. Cover local and connected data handling, agent-directed estimating and external bounty work, review responsibilities, and the separate Apache-2.0 license.
+
+- **A condition row you can read, and a multiplier you can find.** At the default panel width the row's buttons never shrank, so the finish tag was squeezed to nothing. The tag now holds its width and the buttons wrap under it on a narrow panel; from about 460px the row is one line again. The repeating-unit multiplier was a bare `×` beside a small box: it now reads **× N units**, lights cobalt while it is multiplying, and the row wears a cobalt **×N** chip, because a multiplier scales every quantity under the condition and should never be quiet about it.
+- **Hide, show and isolate a condition on the plan (#440).** Every row in the Takeoffs panel now leads with an eye. Click it and that condition's takeoffs—areas, runs and count marks—leave the canvas; click again and they're back. **⌥-click** shows only that condition, which is how you check one system on a dense sheet (just the receptacles, none of the lighting or fire alarm); ⌥-click it again to bring everything back. It is a view, not an edit: hidden work still counts in the totals, the Report, the marked-set PDF and every export, and a red bar over the list says how many are hidden with a one-click **Show all**. Hidden shapes can't be clicked, drawing onto a hidden condition (or ⌖ locating it) reveals it, and opening a project always starts with everything showing.
+- **Drop and Rise on a linear run — the Z the plan cannot show (#441, mcp 0.9.88).** A conduit or home run is traced flat on the floor plan, but the material also travels vertically: down from the ceiling to a panel, up to a box. A Linear run's LF is now its **plan length + rise + drop**. Two new knobs on the condition beside H and T, **↑ Rise** and **↓ Drop** (ft, or m in metric), are the defaults for every Linear run under it and re-flow existing runs live, the way thickness does; select a run and the readout's **this run** row gives that run its own rise and drop (0 included, so "no drop on this one" is a stated fact), with ↺ returning it to the condition's defaults. The selected readout and the Measurements tally read the split (`42′ plan + ↑ 2′ + ↓ 8′`), the condition total, Report, workbook and marked set read the total, and the per-shape CSV/XLSX/JSON gain **Rise ft / Drop ft** columns. Derived base and transitions are floor-level lines by construction and never take a leg. Over MCP, `measure_line` and `edit_shape` take `rise_ft` / `drop_ft` (null on `edit_shape` clears the override), `edit_condition` and `propose_condition_edit` set the defaults, and replies split `plan_lf` / `vertical_lf` beside the total whenever a leg exists; a run's stored `computed.perimeter_lf` stays the total so every reader of it is unchanged. Asked for by an electrical estimator who was drawing "ghost lines" to carry the vertical.
+- **Length × width on an area, in both unit systems.** Trace or select an area and the readout shows the footprint's **L × W** beneath the area (the smallest rectangle around the ring, as a drawing dimension: `12′ 6″ × 10′ 0″`, or metres in metric). A condition with an **H** extends it to **L × W × H**, and the `@H` line now carries the volume in m³ for metric users as well as CY for imperial (it used to drop the volume entirely in metric). The Surface Area live readout also stops printing the condition height in feet while the display is metric. Asked for by a user who wanted the sides and depth of a selection, not just its area.
+- Add Request Premium early-access intake for mobile/tablet, advanced computer vision, estimates/pricing proposals, RFIs and submittals, with voluntary product-news consent, same-origin Netlify Forms storage, and an explicit disabled preview when form processing is unavailable.
+
+- Make Premium workspace the default for browsers without a saved layout choice; preserve saved Classic choices: graphite/light/HUD surfaces, adjustable icon backlight, optional floating quantity readout, and panel tools beside Quantities that move to the right edge in Focus mode. Distinguish Create annotation from Markup list. Preserve wall-height editing when the readout is hidden.
+- Enlarge and refresh sheet thumbnails, add medium/large gallery cards and an independent detailed preview with actual-pixel inspection, and open sidebar-selected sheets in their own tabs.
+
+- **pdf.js ≥ 4.6 folded constructPath, and 5.x hex stroke colors.** `extractVectorGeometry` iterated `constructPath` args as `[subOps[], coords[]]`. From pdf.js 4.6 the worker folds the paint op in as a number and the path as one flat DrawOPS buffer — iterating that number threw "… is not iterable" and Magic Fill / the snap grid built an empty mask. `decodeConstructPath` normalizes both shapes; empty or render-consumed Path2D args skip instead of throwing. `strokeLuminance` now reads the `"#rrggbb"` string pdf.js 5.x emits (it used to refuse it and leave every pen black). Legacy `[subOps, coords]` results are unchanged. Found on a downstream port of this module.
+
+- **Notes are ink on the sheet.** Callouts, text notes and the labels on clouds, highlights, arrows and dimensions are sized in page points and scale with the zoom, like a comment in a PDF viewer — not a fixed screen size that spanned the whole floor plan at fit and shrank to a chip at 300 %. A note wraps at three inches into a paragraph block measured from real text metrics (hit-testing uses the same block), floored at 9 screen px so it stays legible zoomed out. New `web/src/lib/markupText.js` owns the layout for the canvas AND the Marked Set, which burns the same block — and now burns plain text notes at all (they were silently skipped before).
+- **Drafting conventions on the toolbar, one dropdown.** The drawing-style picker and the "Outline area while drawing" toggle moved up from the ⋯ menu, and the ╱ Straight / ⌒ Curve switch over from the readout, into one **Draft** menu between **45°** and the scale — its face is the active style's swatch, so the row stays as compact as before. The bend rows are live while Area, Line, Cut Out or Surface Area is armed and stay open on click.
+- Record the Phase 4 dependency map: what the MCP bundle carries from the web engine (38 files, measured), the one-way import direction, the twice-declared dependencies, the hand-mirrored constants with a drift on record, and the first extraction candidate (a DOM-free constants module) with its API, runtimes, ownership, versioning and release path stated before any move. Documentation only.
+- Publish a second agent's blind runs on the three public plans (OpenAI Codex CLI, same prompt, build and rules as the first agent) beside the first, with a room-by-room comparison in the blind-runs summary. Evaluation data only.
+- Refresh the README: recently shipped entries for the packaged tracing rules, the plan set and blind runs, the human review walkthrough and the protocol/wiki/benchmark work; the agent description no longer says the flood engine runs while it is gated; the drivability contract states how a traced ring is placed and measured; Status links the Phase 3 gate.
+- Record the Phase 3 completion gate in the roadmap: measured workflows, tool-call costs, drawing accuracy by room, preserved data, unsupported handoffs, open defects and release versions, each with its evidence. #385 and #409 remain open.
+- Document the human review loop on an agent takeoff, start to finish, with screenshots of the real app: import, inspect and correct a pending ring, accept the batch, export the takeoff and project archive, report and marked set, and reopen the archive on a clean machine with geometry and review state intact. Exercised by a recorded headless walkthrough (`evals/mcp-workflow-bench/plan-set/human-review-2026-09-12/`); no approval is created by the script, and no runtime, tool or version change.
+## 0.9.87 — Arcs over MCP (2026-09-12)
+
+- `measure_polygon`, `measure_line` and `measure_surface` take `arc_through`: the indices of points that are the middle of a three-point arc. The server lays the unique circle through the point before, the bow and the point after — the canvas's Curve mode (#284) — and bakes it to ordinary vertices with the canvas's own `flattenArcRing`, so SF/LF, the marked set, `edit_shape` and every export keep seeing a plain polygon; the shape's origin carries `curved: true`, the stamp the canvas writes. The result reports `arcs` and the baked vertex count. Refusals over guessing: an index off the trace, a bow at the end of an open run, or two bows in a row refuse whole. Before this an agent facing a radius wall had no arc at all — it chorded the wall or hand-placed a run of points.
+- Packaged guidance: tracing rule 9 in the wiki workflows page (a curved wall is a circle; `get_sheet_vectors` flags its chords), the geometry workflow, and the three tool descriptions.
+
+## 0.9.86 — One writer for the takeoff document (2026-09-12)
+
+- Add `web/src/lib/takeoffDocument.js`: `buildTakeoffDocument` and `sheetEntry`, the one place that decides the takeoff document's envelope — key order, which additive keys are omitted when empty, the diff-only `units` rule, the palette pruning, the sheet-entry provenance rules. The canvas autosave, the file export, the project archive and the MCP server's `export_takeoff` all call it. The canvas's own documents are byte-for-byte what they were.
+- The server's export now follows the app's conventions instead of a second hand-built envelope. Three visible differences, all in the direction of "exactly what the app autosaves": `units` is absent for imperial (it was always `"imperial"`), an empty `sheet_levels` is omitted (it was `{}`), and `rfis` is always present (it rode only when non-empty). Keys come out in the app's order. The `export_takeoff` output schema marks `units` and `sheet_levels` optional and says why; the app's reader has always treated both as optional.
+- Decision on `created_at`: a server-minted condition now carries it, exactly as the canvas's `mintCondition` does (server-minted twins already did). Readers treat it as optional because older files lack it. The comment that called the two "field-identical" is now true.
+- Tests: `web/test/takeoffDocument.test.ts` (envelope, conventions, sheet entries, round trip through the app's reader, the canvas has one writer and no envelope literal) and `mcp/test/document.test.ts` (no hand-built envelope in the server, the app's key order, the app's reader lands the server's document losslessly, a fresh session reproduces it byte-for-byte). The pinned envelope test in `mcp/test/session.test.ts` moved to the app's conventions.
+- Roadmap: the release row now reads 0.9.85 published; Phase 4 rows 1–3 recorded.
+
+## 0.9.85 — One module for the values both surfaces must agree on (2026-09-12)
+
+- Add `web/src/lib/takeoffConstants.ts`: the takeoff and report schema ids, `RENDER_SCALE`, the condition palette, the hatch id vocabulary, the snap constants and the one hatch/palette rotation formula, in a module that imports nothing and touches no DOM. The canvas, the web engine and the MCP server now import these instead of keeping hand copies (the server's copies carried a "mirrors the canvas" comment and had drifted once before). Every literal keeps today's value; saved takeoffs, exports and reports are byte-for-byte what they were.
+- Three parity tests pin it: `web/test` (the canvas HATCHES vocabulary equals HATCH_IDS in order, the store, report envelope and importer read the shared ids, sheets/canvasConstants/oneclick re-export the shared frame and snap values), `mcp/test` (no mirrored constant or schema literal remains in `mcp/src`; a minted condition carries the shared palette and hatch rotation) and `protocol/test` (the legacy schema's `const` equals the shared id).
+- `importTakeoff.js` no longer reaches into the IndexedDB store module for one string, so `store.js` leaves the Node bundle, and `stamps.js` with it (store was its only importer there): 38 engine files → 37, 846.8 kB → 846.7 kB with the regenerated wiki text included.
+- Repository guide: the palette sentence now names the shared module instead of "mirrored copies in `mcp/src/session.ts`", which was stale.
+- Not changed, on purpose: the server's minted condition still omits `created_at` where the canvas writes one. That is a behavior difference, recorded in `docs/design/PACKAGE_BOUNDARIES.md`, not a constants move.
+
+## 0.9.84 — Estimator tracing rules in the packaged guidance (2026-09-12)
+
+- Package the room-tracing rules the plan-set references are drawn to, so every public agent gets them without a bespoke prompt: innermost wall face from `get_sheet_vectors`, door openings crossed on the wall centerline and shared by both rooms, windows run straight, columns, chases and stubs wrapped, hatch, casework and door leaves never a boundary, finish splits on the drawn line, and a tight `view_sheet` overlay check of each ring before the next. They live in `takeoff://wiki/workflows`, the initialize instructions, the `measure_polygon` description, the agent guide and the geometry workflow. Motivated by the 2026-09-12 blind runs, where the ring, not the total, was what failed.
+- No tool, schema, gate or behavior change; documentation and packaged resources only.
+
+Also first published with this version (repository-side changes since 0.9.83):
+
+- Revise the estimator-trace plan-set references to v2 after blind agent runs exposed defects in v1 (a door leaf traced as a wall face, missed door notches, wall stubs and chases counted as floor); v1 kept beside each. Publish the three public blind runs (frozen exports, scores against v1 and v2, overlay and zoom crops) and five new estimator questions. Evaluation data only; no runtime, tool or version change.
+- Resume MCP Registry publication only when the exact published manifest matches; poll delayed reads with bounded retries and refuse conflicting records. Preserve unrelated publishing failures. This fixes the release automation failure observed with MCP 0.9.83.
+
+- Add a scripted benchmark of the built MCP server in flat and staged modes, with source inspection, scale refusal/recovery, room measurements, labeled exports and fresh-process preservation checks.
+- Score analytic synthetic wall-face geometry separately from quantities; reject misplaced polygons, missing labels and invalid calibration. CI retains the public workflow artifacts for review.
+- Preserve a recorded agent's first-pass failure and assisted correction with takeoff JSON, tool-call evidence and overlays. This does not establish accuracy on real project plans or change takeoff behavior.
+- Add an estimator-trace plan set to the workflow benchmark: three public real floor plans (VA St. Cloud finish plan, VA Roseburg clinic floor plan, City of Porterville public-domain ADU plan) with proposed reference rings traced to the interior wall face and door jambs notched to the wall centerline, one ring per room and floor finish, plus provenance, frozen task text and open estimator questions. The scorer gains an `estimator-trace` profile (concave reference rings, label-plus-finish matching, page-aware sheet ids); the runner gains `--reference`. The synthetic fixture and its scores are unchanged. The rings are agent-prepared and await human review; the known-answer CI runs prove tool conformance, not agent accuracy.
+
+## 0.9.83 — MCP documentation cleanup (2026-09-11)
+
+Published to npm and the official MCP Registry, with the desktop bundle and artifact verification in the [release](https://github.com/Kentucky-ai/opentakeoff/releases/tag/mcp-v0.9.83). The release notes disclose the Registry verification failure and manual completion of the remaining assets.
+
+- Clarify the current browser/MCP boundary, stitching controls and handoff limits.
+- Keep the roadmap and translated README lag notices linked to the canonical English/wiki pages.
+- Check seven MCP version fields and the independent web package/lockfile versions before generating tool documentation. Mutation tests cover mismatched, missing and non-string fields, write refusal and successful regeneration.
+- Include `FEATURES.md` in the existing documentation link check and refresh packaged wiki content.
+- No runtime tools or gate behavior change in this entry.
+
+## 0.9.82 — MCP release (2026-09-11)
+
+- Published `opentakeoff-mcp` 0.9.82: [GitHub release](https://github.com/Kentucky-ai/opentakeoff/releases/tag/mcp-v0.9.82).
+
+### Fixed
+- A rerun of the publish workflow skips an already published version.
+- The publish workflow waits for npm's package metadata and exact-version endpoints before continuing with Registry, GitHub release and MCPB work. `scripts/wait-for-npm-availability.mjs` retries at 15-second intervals with a 15-minute deadline, 60-attempt cap and 10-second request timeout; its deterministic retry/timeout/validation tests run in CI.
+
+### Added
+- MCP packages the draft Takeoff Protocol index and explicit schema allowlist as read-only, offline-resolvable resources under `takeoff://protocol`. Resource URIs remain separate from unchanged schema `$id` identifiers, and the index documents structural limits and `exportPayload()` projection omissions. No tool, writer, engine, or approval behavior changes.
+
+## 2026-09-11 — MCP 0.9.81 and opt-in protocol adapters
+
+### Added
+- Private repository adapters and a CLI convert the preflight profile between canvas and draft JSON. They validate both ends, check preservation of all JSON data except the schema identifier, return detached output, and refuse incompatible records without a partial document. The CLI writes only to a new destination. Existing browser/MCP writers, engine quantities and approval authority are unchanged.
+- Executable conversion/transport evidence includes all five manual roles, derived base allowances, human-corrected originals and existing review, plus refusal, idempotency, extension preservation and file-collision checks.
+
+### Documentation
+- Wiki protocol/status pages now describe the bounded adapters and their actual command location. MCP 0.9.81 is published in the [GitHub release](https://github.com/Kentucky-ai/opentakeoff/releases/tag/mcp-v0.9.81); the adapter remains private repository tooling and is not an MCP tool.
+- Protocol checks now run on Linux and Windows. The schema-reference checker accepts CRLF checkout line endings without rewriting files, while still rejecting actual stale documentation.
+
+## 2026-09-11 — Read-only protocol adapter preflight (#414)
+
+### Added
+- Private development preflight reports eligibility, invalid data and unsupported semantics for a bounded document-adapter profile. Checks include active references, per-role quantities and calibration without changing inputs, originals, review, writer formats or MCP runtime behavior. CLI reports explicit non-guarantees and structured issue paths; real Session/browser records and refusal cases are tested. See [the profile and evidence](protocol/PREFLIGHT.md).
+
+## 2026-09-11 — MCP 0.9.80 and merged protocol compatibility work
+
+MCP 0.9.80 is published to npm and the official MCP Registry, with its desktop
+bundle and measured validation evidence in the [release](https://github.com/Kentucky-ai/opentakeoff/releases/tag/mcp-v0.9.80).
+It includes the merged 0.9.78/0.9.79 fixes below and the 0.9.80 wiki resources.
+Protocol schemas and compatibility checks remain development-only; application
+writers still use the current canvas format.
+
+### Derived measurements and revision compatibility
+
+#### Added
+- Protocol cases verify transition geometry/lineage, rule-generated deductions, exact snapshot records and PDF revision bytes/hashes through existing boundaries. The generated compatibility matrix now explicitly excludes full snapshot/PDF history from current project archive transfer. No engine, writer or schema changes.
+
+### Protocol transport compatibility
+
+#### Added
+- Protocol compatibility: add an executable browser/MCP transport matrix with exact geometry, quantity, lineage and review checks; explicitly reproduce unsupported composite/workspace exports and the draft import boundary. CI rejects stale matrix documentation. Development-only checks; current writers and engine behavior are unchanged.
+
+### Shared wiki and MCP knowledge resources (mcp 0.9.80)
+
+#### Added
+- Source-backed wiki covering capability status, architecture, protocol, human/agent workflows, MCP routing, domain knowledge and repository conventions. AGENTS.md becomes a task router; existing contributor/release rules remain in the repository guide.
+- Nine packaged Markdown resources, starting at `takeoff://wiki`, available before loading plans and in staged mode. CI and builds reject stale content/version; the distribution smoke check reads every page over stdio. Wiki navigation stays within resources; repository source links explicitly browse main.
+
+#### Fixed
+- The Agent Brief no longer claims supplied polygons are automatically verified. Stale 40/45/47-tool claims in the human/agent entry points, feature map and translated README notices are replaced by generated default/gated/setup counts. CI rejects additional unmarked prose counts.
+- Human stitching guidance now states that MCP import/export omits stitches; use the browser archive for composite work or measure source sheets individually.
+- Documentation-link checks include the wiki and contributor entry points.
+
+### Geometry review cleanup (mcp 0.9.79)
+
+#### Fixed
+- Scope collision review ignores machine-precision edge residue. Real positive overlaps below 0.01 SF remain listed with an explanation and a nonzero display label. Measured geometry and quantities are unchanged.
+- `cut_out` refuses a derived base carrying unlocated numeric opening allowances, preventing a geometric cut from replacing the existing allowance. Explicit physical runs remain clippable.
+
+#### Added
+- `edit_annotation` changes only text with exact undo; RFI-linked notes and verdict ids refuse. Positions, dimensions, quantities and review records stay unchanged.
+- Protocol compatibility coverage checks actual opening endpoints and stepped wall bands. Tool stages and required inputs now have a generated reference checked in CI, alongside counts on every human/agent entry point.
+
+### Validated MCP exports and marked-set linear allowances (mcp 0.9.78)
+
+#### Fixed
+- `export_takeoff` now declares the calibration provenance and RFI fields its writer already emits. Clients that discover tools before calling them no longer reject a valid export during output-schema validation. Conformance clients now discover tools before exercising replies. No persisted format or approval behavior changes.
+- The marked-set cover prints waste-adjusted linear quantities in LF (or m), instead of showing `0 SF` for base and transition conditions. Measurement totals are unchanged.
+
+#### Documentation
+- Added a source-to-overlay geometry workflow covering vector candidates, detail scales, physical base runs, supporting materials, verification, and human handoff.
+
+### Preserve agent originals during human correction
+
+#### Fixed
+- Human corrections now freeze the original outer vertices of agent-authored shapes even when the drawing method is `manual` or absent. Later corrections keep the same original; undo/redo restores geometry and provenance together. Human manual traces, review/approval gates, and agent self-edit tallies retain their existing behavior. Previously lost originals cannot be recovered by this fix.
+
+### Draft Takeoff Protocol (#405)
+
+#### Added
+- Development-only JSON schemas for Measurement, Calibration, Provenance, Evidence, Review, and a proposed TakeoffDocument v1, with a separate profile for existing `takeoff_canvas.v1` records. The canvas and MCP keep writing the existing format.
+- A source-linked field inventory, Academy compatibility report, draft event vocabulary, and explicit compatibility limits. The report records the agent/manual original-geometry gap and the MCP stitched-document limitation without changing either behavior.
+- Offline schema validation, representative browser/MCP record checks, and generated schema documentation enforced by CI. No runtime dependency, tool, migration, or approval behavior changes.
+
 All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 
 ## Unreleased — Count-object symbols, plan labels, and the authored-layer seam
@@ -65,6 +230,20 @@ All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 
 ### Changed
 - **One-Click Area and batch room detection are temporarily gated while the flood engine is re-validated against a wider plan corpus.** The engine code stays in the repo and the bench still rules it; what is withdrawn is every way to reach it. On the MCP server `one_click` and `detect_rooms` are **not registered** on a default build — `tools/list` never names them, the initialize instructions say so and point at `measure_polygon`, and no surviving tool description sends an agent to a verb that is not there (the published tool count is 45). In the canvas the One-Click tile leaves the rail, `O` reports the gate instead of arming, the voice trace and the in-app agent's tool list drop it, and the in-app guide says what to do instead (Area, `A`). Lift the gate for a build with `OPENTAKEOFF_ONE_CLICK=1` (server) / `VITE_ONE_CLICK=1` (canvas); the parity and conformance tests run with it lifted, `gate.test.ts` pins both surfaces. Design: `docs/design/ONE_CLICK_GATE.md`.
+
+## Unreleased — personal workspace preview
+
+### Added
+- Opt-in workspace chrome with visible undo/redo, condition and scale controls, searchable actions and sheets. Measuring tools keep their sidebar order. Sheets, Work, Takeoffs and the tool rail can dock to either side, with position locking and up to eight named arrangements saved in this browser. Classic layout remains available without reloading. Measurement and rendering engines are unchanged.
+
+## Unreleased — shared work and review
+
+### Added
+- **Work** opens project measurements from agents and the canvas in one searchable review panel. Select a measurement to open its sheet and inspect its quantity, provenance, calibration state, and boundary. **Mark reviewed** uses the existing undoable review command. The **Agent** tab retains the browser agent and its proposal controls.
+
+### Changed
+- Scale stays beside Work and Report instead of being clipped at the scrolling toolbar edge. Narrow windows put the pinned controls on a wrapping row.
+- Condition properties can collapse to reclaim drawing space. Work uses a drawer on smaller screens and a full-height view on phones. Floating totals clear the work panel and report so they cannot cover review or delivery controls.
 
 ## Unreleased — Phase 1 measurement correctness (mcp 0.9.72)
 

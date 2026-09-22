@@ -72,7 +72,7 @@ async function captureStderr(fn: () => Promise<void>): Promise<string> {
 // no geometry crosses them — same reasoning.
 // the proposal verbs (#365) other than revise_proposal take a label, a
 // rationale, a condition diff, or a record id — no geometry crosses them.
-const NO_COORDS = new Set(["undo_last", "edit_materials", "edit_condition", "export_report", "export_marked_pdf", "export_dxf", "link_annotation", "list_shapes", "derive_base", "import_takeoff", "delete_verdict", "duplicate_condition", "split_condition", "apply_rules", "create_rfi", "list_rfis", "resolve_rfi", "delete_rfi",
+const NO_COORDS = new Set(["undo_last", "edit_materials", "edit_condition", "export_report", "export_marked_pdf", "export_dxf", "edit_annotation", "link_annotation", "list_shapes", "derive_base", "import_takeoff", "delete_verdict", "duplicate_condition", "split_condition", "apply_rules", "create_rfi", "list_rfis", "resolve_rfi", "delete_rfi",
   "propose_takeoff", "withdraw_proposal", "propose_condition_edit", "withdraw_condition_edit",
   // scope_merge (#366) takes two shape ids and a winner — no geometry crosses it
   "scope_merge"]);
@@ -2625,7 +2625,7 @@ test("RFIs: create → list → resolve → delete round-trip on the wire, and u
   assert.equal(afterDel.data.count, 0);
   assert.deepEqual(afterDel.data.withdrawn, ["RFI-001"], "the gap is explained, not silent");
   const payload2 = await call(client, "export_takeoff", {});
-  assert.equal(payload2.data.rfis, undefined, "a tombstone never reaches the app — its register has no such notion");
+  assert.deepEqual(payload2.data.rfis, [], "a tombstone never reaches the app — its register has no such notion; the app always writes the (empty) list");
   assert.equal(payload2.data.markups.find((m: any) => m.id === cloud.data.id).rfi_id, "", "link cleared, note kept");
   assert.equal(payload2.data.markups.length, 2);
   // a withdrawn id is refused by name, and so is a made-up one
@@ -2794,4 +2794,142 @@ test("RFIs in the marked set: an agent-raised RFI prints exactly like a panel-ra
   // and, origin aside, the two records are the same shape — the panel loads either
   const strip = (r: any) => { const { id, created_at, origin, ...rest } = r; return rest; };
   assert.deepEqual(strip(agentRec), strip(panelRec));
+});
+
+test("export_takeoff after tools/list preserves calibration and RFIs under client output validation", async () => {
+  const client = await pair({});
+  try {
+    // Discovery primes the SDK's JSON Schema output validator. Calling tools
+    // without tools/list can miss fields forbidden by their advertised schema.
+    await client.listTools();
+    await client.callTool({ name: "load_plan", arguments: { path: PLAN } });
+    await client.callTool({ name: "set_scale", arguments: { sheet: KEY, use_detected: true } });
+    await client.callTool({ name: "create_rfi", arguments: {
+      sheet: KEY, title: "Synthetic scope question", question: "Confirm the finish at the indicated location.",
+    } });
+    const result = await client.callTool({ name: "export_takeoff", arguments: {} });
+    assert.equal(result.isError, undefined);
+    const data: any = result.structuredContent;
+    assert.equal(data.sheets[0].scale_source, "detected");
+    assert.equal(data.sheets[0].scale_confirmed, false);
+    assert.equal(data.rfis.length, 1);
+    assert.equal(data.rfis[0].subject, "Synthetic scope question");
+    assert.deepEqual(JSON.parse((result.content as any[])[0].text), data);
+  } finally { await client.close(); }
+});
+
+// #409: shorten a note through the discovered wire surface; geometry,
+// quantities, links, human verdicts and extension fields must remain exact.
+test("edit_annotation changes only text, round-trips and undoes; no approval or RFI backdoor", async () => {
+  const session = new Session();
+  const server = buildServer(session);
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await server.connect(st);
+  const client = new Client({ name: "annotation-edit", version: "1" });
+  await client.connect(ct);
+  try {
+    await client.listTools();
+    await call(client, "load_plan", { path: PLAN });
+    assert.equal((await call(client, "set_scale", { sheet: KEY, upp: 1 / 36 })).isError, false);
+    assert.equal((await call(client, "measure_polygon", { sheet: KEY, verts: [[100, 100], [460, 100], [460, 460]], condition: "FT-1" })).isError, false);
+    const created = await call(client, "annotate", { sheet: KEY, type: "dimension", from: [100, 100], to: [460, 100], text: "A note too long for this drawing", condition: "FT-1" });
+    assert.equal(created.isError, false);
+    const id = created.data.id;
+    Object.assign(session.markups[0], { extension: { keep: [1, 2] } });
+    const before = structuredClone(session.exportPayload());
+    const edited = await call(client, "edit_annotation", { annotation_id: id, text: "Verify in field" });
+    assert.equal(edited.isError, false);
+    assert.equal(edited.data.text, "Verify in field");
+    const after = session.exportPayload();
+    assert.deepEqual(after, { ...before, markups: before.markups.map(m => ({ ...m, text: "Verify in field" })) });
+    const listed = await call(client, "list_annotations");
+    assert.equal(listed.data.annotations[0].text, "Verify in field");
+    assert.equal(listed.data.annotations[0].length_lf ?? session.markups[0].len_ft, 10);
+    const undone = await call(client, "undo_last", { n: 1 });
+    assert.equal(undone.isError, false);
+    assert.equal(undone.data.steps[0].op, "annotation_text");
+    assert.deepEqual(session.exportPayload(), before);
+    assert.equal((await call(client, "edit_annotation", { annotation_id: id, text: "" })).isError, false, "empty text clears the note; dimension length remains");
+    assert.equal(session.markups[0].len_ft, 10);
+    await call(client, "undo_last", { n: 1 });
+    assert.equal((await call(client, "edit_annotation", { annotation_id: "missing", text: "x" })).isError, true);
+    assert.equal((await call(client, "edit_annotation", { annotation_id: id, text: session.markups[0].text })).isError, true, "a no-op must not consume an undo step");
+    session.markups[0].rfi_id = "rfi-existing";
+    const linked = structuredClone(session.exportPayload());
+    const refused = await call(client, "edit_annotation", { annotation_id: id, text: "Architect approved" });
+    assert.equal(refused.isError, true);
+    assert.match(refused.data.error, /RFI/);
+    assert.deepEqual(session.exportPayload(), linked);
+    assert.equal(session.approvals.length, 0);
+  } finally { await client.close(); await server.close(); }
+});
+
+// #441 — Drop and Rise: a linear run's LF is its plan trace plus its vertical legs.
+test("measure_line rise/drop: condition defaults, per-run override, edit_shape clear, edit_condition re-flow, undo", async () => {
+  const client = await pair();
+  await call(client, "load_plan", { path: PLAN });
+  await call(client, "set_scale", { sheet: KEY, use_detected: true });
+
+  // 300 px at 1/4" = 1'-0" (36 px/ft at render scale 2) = 8.33 LF plan
+  const flat = await call(client, "measure_line", { sheet: KEY, pts: [[600, 400], [900, 400]], condition: "EC-1" });
+  assert.equal(flat.isError, false);
+  assert.equal(flat.data.length_lf, 8.33);
+  assert.equal(flat.data.plan_lf, undefined, "a flat run carries no split");
+
+  // the condition's defaults re-flow the existing run and seed the next
+  const knob = await call(client, "edit_condition", { condition: "EC-1", rise_ft: 2, drop_ft: 8 });
+  assert.equal(knob.isError, false);
+  assert.equal(knob.data.rise_ft, 2);
+  assert.equal(knob.data.drop_ft, 8);
+  let sum = await call(client, "takeoff_summary");
+  assert.equal(sum.data.conditions[0].lf, 18.33, "edit_condition re-flowed the committed run");
+
+  const dflt = await call(client, "measure_line", { sheet: KEY, pts: [[600, 500], [900, 500]], condition: "EC-1" });
+  assert.equal(dflt.data.length_lf, 18.33);
+  assert.equal(dflt.data.plan_lf, 8.33);
+  assert.equal(dflt.data.vertical_lf, 10);
+  assert.equal(dflt.data.rise_ft, 2);
+  assert.equal(dflt.data.drop_ft, 8);
+
+  // a run's own drop (0 here) beats the condition's 8; rise still defaults to 2
+  const own = await call(client, "measure_line", { sheet: KEY, pts: [[600, 600], [900, 600]], condition: "EC-1", drop_ft: 0 });
+  assert.equal(own.data.length_lf, 10.33);
+  assert.equal(own.data.vertical_lf, 2);
+  sum = await call(client, "takeoff_summary");
+  assert.equal(sum.data.conditions[0].lf, 46.99, "18.33 + 18.33 + 10.33 → the report sums totals");
+
+  // edit_shape: set a leg, then clear it (null) so the default applies again
+  const set = await call(client, "edit_shape", { shape_id: own.data.shape_id, drop_ft: 4 });
+  assert.equal(set.isError, false);
+  assert.deepEqual(set.data.changed, ["drop_ft"]);
+  assert.equal(set.data.perimeter_lf, 14.33);
+  assert.equal(set.data.vertical_lf, 6);
+  const clr = await call(client, "edit_shape", { shape_id: own.data.shape_id, drop_ft: null });
+  assert.equal(clr.data.perimeter_lf, 18.33, "cleared → the condition's 8 ft drop applies");
+
+  // legs belong to linear runs only
+  const wall = await call(client, "measure_surface", { sheet: KEY, pts: [[100, 100], [400, 100]], condition: "CT-W9", height_ft: 9 });
+  const bad = await call(client, "edit_shape", { shape_id: wall.data.shape_id, rise_ft: 3 });
+  assert.equal(bad.isError, true);
+  assert.match(bad.data.error, /linear run's vertical legs/);
+
+  // the export carries the split on the shape record, and the condition its defaults
+  const exp = await call(client, "export_takeoff");
+  const conds = exp.data.conditions as any[];
+  const ec = conds.find((c) => c.finish_tag === "EC-1");
+  assert.equal(ec.rise_ft, 2);
+  assert.equal(ec.drop_ft, 8);
+  const shp = (exp.data.shapes as any[]).find((x) => x.id === dflt.data.shape_id);
+  assert.equal(shp.computed.perimeter_lf, 18.33);
+  assert.equal(shp.computed.plan_lf, 8.33);
+  assert.equal(shp.computed.vertical_lf, 10);
+
+  // undo the knob write: the defaults go, and every run without its own leg re-flows flat
+  const zero = await call(client, "edit_condition", { condition: "EC-1", rise_ft: 0, drop_ft: 0 });
+  assert.equal(zero.isError, false);
+  sum = await call(client, "takeoff_summary");
+  assert.equal(sum.data.conditions.find((c: any) => c.finish_tag === "EC-1").lf, 24.99, "3 flat runs × 8.33");
+  await call(client, "undo_last");
+  sum = await call(client, "takeoff_summary");
+  assert.equal(sum.data.conditions.find((c: any) => c.finish_tag === "EC-1").lf, 54.99, "undo restored the legs and re-flowed all three runs (the cleared override now takes the default too)");
 });
