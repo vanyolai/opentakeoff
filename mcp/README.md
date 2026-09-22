@@ -44,19 +44,21 @@ what's missing where rendering isn't available.
 engine is re-validated against a wider plan corpus: `tools/list` never names them, the
 initialize `instructions` say so and point at `measure_polygon`, and no other tool's
 description sends an agent to a verb that is not there. A default build registers
-**52 tools**. Everything else — sweeps, counts, `derive_base`, `derive_transitions`, the
+**<!--tool-count-->53<!--/tool-count--> tools**. Everything else — sweeps, counts, `derive_base`, `derive_transitions`, the
 exports — is unchanged. Set `OPENTAKEOFF_ONE_CLICK=1` in the server's environment to
-register both verbs (54 tools); the parity, conformance and e2e tests run that way, and
+register both verbs (<!--tool-count-all-->55<!--/tool-count-all--> tools); the parity, conformance and e2e tests run that way, and
 `test/gate.test.ts` pins both surfaces. The rows and examples below that use `one_click`
 describe the lifted build. Design note: [`docs/design/ONE_CLICK_GATE.md`](../docs/design/ONE_CLICK_GATE.md).
 
 
-The takeoff engine—One-Click Area, the scale model, conditions, totals—on
-**stdio for your MCP client**. An agent can open a plan, read the title block,
-set the scale, click rooms, and hand back the same takeoff payload the browser
-app autosaves. Same engine, same math: the server imports
-`web/src/lib/{oneclick,sheets,geometry,totals}` directly, so a shape committed
-here is field-identical to one committed on the canvas.
+The takeoff engine—scale model, conditions and totals—on **stdio for your MCP
+client**. An agent can open a plan, read the title block, set the scale, inspect
+source geometry and commit defensible measurements. The server imports shared
+web modules, so quantity math and takeoff records are compatible with the
+canvas. Browser and MCP room-detection paths currently differ; a shared module
+does not establish identical boundaries on every plan. See the [capability
+status](../docs/wiki/status.md) and [compatibility matrix](../protocol/COMPATIBILITY.md)
+before claiming detector parity or a lossless handoff.
 
 ## Run with Docker
 
@@ -121,7 +123,7 @@ includes document text, shape vertices, or result payload content.
 
 ### Staged tool exposure (opt-in)
 
-By default every client gets all 52 tool schemas on `tools/list`—the flat
+By default every client gets all <!--tool-count-->53<!--/tool-count--> tool schemas on `tools/list`—the flat
 contract every published client already expects. Fifty-two descriptions is real
 token weight for an agent session that may never touch half of them, so the
 server can instead stage the surface along the workflow it already teaches:
@@ -130,7 +132,7 @@ server can instead stage the surface along the workflow it already teaches:
 OPENTAKEOFF_MCP_STAGED_TOOLS=1 npx -y opentakeoff-mcp
 ```
 
-Staged, only the **setup** stage (load, scale, read the set—11 tools) starts
+Staged, only the **setup** stage (load, scale, read the set—<!--tool-count-setup-->11<!--/tool-count-setup--> tools) starts
 enabled, plus one opener: `open_tool_stage`. Calling it with `"measure"`,
 `"revise"`, or `"handoff"` enables that stage's tools and fires
 `tools/list_changed`, so any client that supports dynamic tool lists (Claude
@@ -142,6 +144,8 @@ client that honors `tools/list_changed`; leave the flag unset for one that
 reads the tool list once. ([#230](https://github.com/Kentucky-ai/opentakeoff/issues/230))
 
 ## Tools
+
+The [generated tool index](../docs/MCP_TOOL_INDEX.md) lists stages and required arguments from the runtime schemas; CI rejects stale output and missing reference rows.
 
 | Tool | What it does |
 |---|---|
@@ -157,10 +161,11 @@ reads the tool list once. ([#230](https://github.com/Kentucky-ai/opentakeoff/iss
 | `derive_transitions` | **The transition where two finishes meet**: pass two finish tags and the tag to commit under, and every committed room of each is compared against every room of the other. The catch this is built around—flood-traced rooms **do not share edges**, a partition puts 4–8″ between them—so proximity comes in two flavours and they are never conflated. A **butt joint** (rings running together inside one open space, within an inch) *is* the transition and commits as a linear shape, `origin.derived` naming both parents, the tags, and the measured gap. A **wall-separated** run means the rooms are adjacent across a partition, where the transition is a threshold in a doorway that nothing in the trace record locates (the flood engine reports how *much* boundary it sealed, never where)—those return in `withheld` with length, gap in inches, and an `at` point to `view_sheet`, as questions rather than a confident wrong number. `max_gap_in` (default 12) only ever turns more of the plan into questions, never into committed LF. All-or-nothing; one undo step. |
 | `measure_surface` | **Wall SF**: an open run traced along the wall, quantified as traced LF × the condition's height (the canvas's H knob—pass `height_ft` to set it, or set it once with `edit_condition`). Wall tile, wainscot, wall systems. Refuses without a height, minting nothing. |
 | `place_count` | **EA markers**: one point, one each—thresholds, stair nosings, floor boxes. No scale required (EA is scale-free). One shape per point; the whole call is one undo step. |
+| `count_marks` | Count value-annotated device marks or schedule-keyed equipment labels, report withheld mentions, and optionally commit pending count shapes. |
 | `symbol_sweep` | **Every instance of a repeated plan symbol, from ONE example**: marquee a tight `seed_rect` around a single drain/threshold/fixture symbol and the vector linework is searched deterministically for every other placement—translation plus 0/90/180/270 rotation and mirroring (both on by default). Score = length-weighted fraction of the seed's segments matched within `tolerance_px`; ≥ 0.92 is a match, the 0.75–0.92 band returns in `withheld` with reasons (never committed, never dropped silently), and the work cap is disclosed when it bites. **`scope: "set"` sweeps the whole working set, counting on PLAN-role sheets only** (the sheet graph decides; every excluded sheet disclosed in `skipped` with role and reason)—and the seed rect may sit on a detail or legend sheet, which then serves as the fingerprint SOURCE while staying excluded from counting: the estimator's "click the assembly in the detail, count it on the plans" gesture. Per-sheet results carry their own match/withheld lists, per-sheet cap accounting, and wall-clock `elapsed_ms`. `commit: true` + `condition` commits every match center as an EA count marker—the whole sweep (set-wide included) is one undo step, `origin.method "symbol_sweep"` with per-marker score, transform, and seed source (`origin.symbol.seed`). No scale required. **Counter-examples** (`exclude`, #259): rects around instances you do NOT mean, marqueed like the seed—the rect's own contents decide whether it rejects by extra contained linework or by the background line running THROUGH it that a real instance would break; every rejection disclosed in `rejected[]`, reinstatable with `place_count`, dead negatives refused with instructions. **Stroke-luminance gate** (`luminance_tolerance`, #260): for flattened exports where layers and pen weights are stripped but the file still states stroke color—a stated tolerance holds candidates to the seed's own pen, opt-in both ways, with `lum_gate` naming every placement the pen pulled under the bar. **Labels** (#308): for labeled families the sweep reads the drawing's own names—a fixture token written beside a placement or connected by its drawn leader (leader-following arms only on multi-pen sheets)—as `label`/`label_via` on every row plus `seed.label`; the reply flags shape-only matches in a labeled family, withheld rows carrying the seed's own tag, and matches the drawing names differently. Disclosure, never a recount. |
 | `sweep_schedule_row` | **Take off a schedule row's mark from the row itself**: pass the row's key (for example, `T1`) and the tool reads the row from the set's schedule tables (the row is the condition's cited source), anchors a fingerprint on the marker the tag is DRAWN as on a plan sheet (a deterministic pad ladder around the tag text; where the tag occurs more than once the fingerprint must recur at a second occurrence—`anchor.corroborated`—before it is trusted), and sweeps every plan-role sheet. **The count is geometry AND text agreeing**: drafting reuses one bubble shape across many marks, so a match counts only when the row's own tag sits within the marker footprint (its bbox rides the match as `tag_at` evidence); a match labeled with a sibling key is `excluded` and says whose it is, an unlabeled match is `withheld` as a question, a tag drawn with no matching marker is `text_only`. Refusal over guessing, each with the reason and the fix: no such row, an ambiguous key, a tag drawn on no plan sheet, no repeatable marker linework—a fingerprint is never guessed from text alone. `commit: true` commits the counted matches under the row's own key—one undo step, `origin.assignment {source: "schedule"}` plus the anchor and row citation on `origin.symbol.seed`. No scale required. |
 | `takeoff_summary` | Per-condition totals + grand totals, computed by the Report's rules. |
-| `export_takeoff` | The full `opentakeoff.takeoff_canvas.v1` payload—exactly what the app autosaves. Inline, and to disk with `path` (see **Writing to disk** below). |
+| `export_takeoff` | Includes calibration provenance (`scale_source`, `scale_confirmed`) when present and live RFIs in its declared output schema. The full `opentakeoff.takeoff_canvas.v1` payload—exactly what the app autosaves. Inline, and to disk with `path` (see **Writing to disk** below). |
 | `delete_shape` | Remove a committed shape by id. |
 | `propose_takeoff` | **Open a named batch** (#365). Every shape you commit from here on attaches to it (`origin.proposal_id`, stamped centrally at the commit—hand traces, sweeps, derives, `cut_out` alike), so the estimator sees ONE Accept pill for the batch instead of one per shape. `label` is what they read on the pill, `rationale` is what decided the batch; both required. Commits nothing itself. |
 | `revise_proposal` | Replace **every still-pending shape** in a batch with a new set, as one journal step. All-or-nothing: validated (sheet, scale, vertex minimum, a height for `surface_area`) before the first pending shape is removed, the error naming the entry. Accepted shapes are ink and stay. One `undo_last` puts the previous batch back. |
@@ -183,6 +188,7 @@ reads the tool list once. ([#230](https://github.com/Kentucky-ai/opentakeoff/iss
 | `undo_last` | Step back over your own last `n` mutations, newest first. Exact inverses: a commit is removed, an edit restored verbatim, a delete re-inserted where it was, a materials edit's whole array restored, a condition edit's waste/multiplier pair restored. A whole `detect_rooms` sweep is **one** step. |
 | `annotate` | Place a note ABOUT the work—cloud/highlight (`rect`), text (`at`), callout (`at` + `target`), **arrow** (`from` + `to`—plank/seam direction), **bubble** (`at` + optional `r`—keynote circle, centered text), **dimension** (`from` + `to`—a dimension line with end ticks, labeled with the measured length at the sheet's scale; the one annotation the scale gate applies to—an unscaled sheet refuses like the measure tools). Attach to a condition and it wears that scope's color on the canvas and in the marked set. No review gate: notes are not geometry. |
 | `list_annotations` | Every annotation with its condition RESOLVED to a finish tag, coordinates back in image px; filter by sheet/condition. `unattached` counts the link_annotation candidates. `verdicts[]` is the approval family's inventory—every mark with its actor stated, a condition filter reaching a verdict through its target shape. |
+| `edit_annotation` | Replace or clear only annotation text; coordinates, dimensions, links, quantities and review stay unchanged. RFI-linked notes refuse. `undo_last` restores the previous text. |
 | `link_annotation` | Attach an existing annotation to a condition (or detach with an empty tag)—the canvas's Attach/Detach control, reachable by an agent. |
 | `mark_verdict` | The **agent's pencil-signature** on work it checked—the agent half of the approval family (#176). Mints the graphite AGENT diamond, and structurally nothing else: the tool takes no actor input, so the estimator's APPROVED ring stays behind the canvas's human-only Approve tool. Target a committed `shape_id` (anchored on the shape—a room's centroid, a run's midpoint—with the id recorded as provenance) or a `sheet` + `at` point; optional short `text` rides the record. Touches no quantity; renders on the canvas and in the marked set, whose cover tallies the split (`Approval stamps: N estimator-approved · M agent-marked`); rides the annotations payload through `export_takeoff`/`import_takeoff` and the app's own saves. One mark per shape. |
 | `delete_verdict` | Lift an agent verdict mark by id. Agent marks only—the estimator's seal is human ink and is refused, the same line `edit_shape` holds on reviewed shapes. `undo_last` re-seats a lifted mark exactly where it was. |
@@ -232,6 +238,32 @@ output, so it declares no schema by design). Failures come back as
 `isError: true` with `{"error": "..."}`—never a dropped connection.
 
 ## Resources — browse before you measure
+
+The [wiki index](../docs/wiki/README.md) is always available as `takeoff://wiki`,
+including before `load_plan` and while measurement stages are closed. Its eight
+linked pages use `takeoff://wiki/{page}`: status, architecture, protocol,
+workflows, mcp, domain, repo-guide and tool-index. Read only the page relevant
+to the current task. These are static public Markdown resources, not tools;
+reading them cannot change geometry, scale or review.
+
+Pages are embedded in the published MCP bundle with its version and an
+LF-normalized source hash. Wiki links navigate to packaged resources; links to
+repository code browse `main` and may be newer. Unknown resource paths refuse;
+there is no filesystem path or remote URL input. `npm run check:wiki` compares
+the embedded copy to source; `-- --write` regenerates it. Build and CI fail when
+it is stale. The distribution smoke check reads all nine pages over stdio.
+
+MCP 0.9.82 also embeds the explicit allowlist of draft Takeoff Protocol schemas
+as read-only resources. Read `takeoff://protocol` for the machine-readable
+index, then a schema such as
+`takeoff://protocol/v1/measurement.schema.json`. This route is available before
+plan load and while stages are closed; it adds no tool and does not change
+`exportPayload()` or any writer. The URI is a transport address separate from
+the unchanged schema `$id`; the `$id` is an offline-resolution identifier, not
+a hosted-file promise. See `takeoff://wiki/protocol` for scope and limitations.
+
+The generated registry is checked with `npm run check:protocol-resources`; it
+must remain current before building or publishing the package.
 
 Tools let an agent act; resources let it **see**. When a plan loads, the sheet
 set becomes browsable natively (`resources/list` re-announces itself through

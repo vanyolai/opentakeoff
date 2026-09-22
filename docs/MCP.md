@@ -168,7 +168,7 @@ Fifty-two tools, in the order an agent tends to reach for them:
   (multi-cut parents rebuild from the pristine snapshot minus survivors—the
   canvas's own delete semantics, ported as the spec)
 - **Revise**—`edit_shape` (all five roles), `edit_materials`,
-  `edit_condition` (waste %, ×N multiplier, `height_ft`, and the roll-goods
+  `edit_condition` (waste %, ×N multiplier, `height_ft`, `rise_ft` / `drop_ft` — the vertical legs every linear run adds to its plan length (#441), and the roll-goods
   `roll_setup` opt-in—the reply echoes the figured order), `delete_shape`,
   `undo_last`, with `list_shapes` as the mid-session inventory the mutating
   verbs assume you have
@@ -382,3 +382,46 @@ dense linework (hatching or text).`
 `import_takeoff` refuses new dimensional shapes when their source calibration differs from the session's calibration, or is missing while the session has one. The error names the sheet and scales; no session state changes. Align calibrations and re-export, or load a fresh session to adopt the export's calibration. Counts and duplicate IDs are exempt. An existing calibration is preserved even in an untraced session.
 
 New agent measurements, including `measure_polygon` and `measure_line`, explicitly carry `origin.reviewed: false`. Legacy agent records without the flag are normalized on import and browser reload. Explicit prior human approval is preserved. No new review gate is introduced.
+
+## Geometry workflow
+
+[Geometry from source to review](GEOMETRY_WORKFLOW.md) gives the measurement order and verification checks for a real finish takeoff. Discover tools before invoking them so the client validates the declared output contracts.
+
+## Review cleanup and current tool inventory
+
+The [generated tool index](MCP_TOOL_INDEX.md) gives each tool's stage and required
+arguments directly from the running server's schemas. The default surface has
+<!--tool-count-->53<!--/tool-count--> tools; gated tools and the staged opener are listed separately.
+
+Use `list_annotations` → `edit_annotation {annotation_id, text}` to shorten or clear
+a note. One `undo_last` restores the text. Geometry, dimension length, links and
+human review are unchanged. RFI-linked notes refuse; inspect their question in
+the browser register. Verdicts are separate records, not editable annotations.
+
+`scope_duplicates` ignores machine-precision edge residue, but preserves real
+small overlaps with an explanation when SF rounds to zero. A material coverage
+row is not another finish polygon. For a physical opening, clip an explicit
+`measure_line` or `measure_surface` run with `cut_out`; a derived base with numeric
+opening allowances refuses clipping because those openings have no locations.
+
+## Wiki resources
+
+Read `takeoff://wiki` for the [knowledge index](wiki/README.md), then the one
+`takeoff://wiki/{page}` resource the current task needs. The index and eight
+pages are readable before any plan is loaded, in flat or staged mode. They
+contain public documentation packaged with the MCP version, not project data.
+No additional measurement tool or approval authority is introduced.
+
+The bundle is generated from the repository wiki and tool index; CI checks
+content, source hashes, version and links. Wiki-to-wiki links stay within MCP
+resources. Code/reference links browse repository `main`, which may be newer
+than an installed package. This distinction is stated in each resource reply.
+
+The draft Takeoff Protocol is also available as static resources. Read
+`takeoff://protocol` for the compact index, then the allowlisted schemas under
+`takeoff://protocol/{path}`. This route is available before plan load and in
+staged mode. It is contract/discovery material and introduces no validator tool
+or writer migration. Resource URIs are transport addresses separate from the
+unchanged schema `$id` identifiers; those IDs support offline `$ref` resolution
+and do not promise hosted files. Read `takeoff://wiki/protocol` for scope,
+projection omissions, and validation limits.

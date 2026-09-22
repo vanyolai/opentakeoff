@@ -1,5 +1,19 @@
 # OpenTakeoff — The User Manual
 
+### Annotation toolbar and reviewed Sweep
+
+The top **Annotate** row provides **Arrow**, **Highlighter**, **Callout**, **Cloud + note**, **Sweep**, **Select markups**, and **Favorites**. Arrowheads, both ends, page-point line weights, colors, line styles, and note sizes are editable. Select a markup and drag its handles; a callout's text box moves independently of its target. Highlighter offers Freehand, Straight, and Text modes. Text mode highlights whole native PDF text runs, including rotated runs; scanned text needs a stroke instead. Favorites save named tool styles in this browser.
+
+**Sweep** boxes one native vector symbol or PDF text example and searches that sheet. A confirmation panel lists numbered results with individual checkboxes, synchronized with numbered boxes on the sheet. Exclude any result, clear the selection, or use **Select matches** to restore confident matches. Near matches start unchecked. Nothing is added until **Apply to selected**; choose clouds with an optional shared note or notes with leaders. Cancel leaves the PDF unchanged. One undo removes the applied batch, and redo restores it. This creates editable app markups around PDF content; it does not modify source PDF text or create takeoff quantities. Symbol matching requires vector content; PDF text matching joins adjacent aligned fragments into labels, then compares normalized labels; it does not use OCR or match arbitrary paragraphs. Search limits are disclosed in the confirmation panel.
+
+**Select markups** boxes existing editable annotations for shared style edits. Shift-click adds individual marks. Changes made through this toolbar support undo/redo. Existing geometry, quantity tools, stamps, and the symbol-count workflow remain available. Marked-set exports retain vector arrows, clouds, notes, and translucent highlights.
+
+
+### Pin a reference
+
+Click **Pin** beside **Sheets** in the top toolbar, then click two corners around any part of a drawing. The reference stays visible as you change sheets. Drag its header to move it, resize its corner, zoom independently, or use **Source** to return to the original region. Close the window without deleting the capture; the count beside **Pin** reopens it. Saved pins live in the project’s Captures list and stay out of marked-set PDF exports. The existing Image tool still places images on sheets.
+
+
 OpenTakeoff is a takeoff canvas that runs in your browser. Open a plan, set the scale, trace the finishes—or let an AI agent stage the tracing while you keep the accept button—and walk away with a priced-out quantity report, a materials buy list, and a marked set you can send to a GC. Everything happens on your machine: no account, no upload, no install.
 
 This manual takes you from a blank browser tab to a finished, exported takeoff, and covers every shipped feature along the way. Shortcuts appear inline as you meet each tool; the complete table is in [§15](#15-keyboard-reference).
@@ -60,8 +74,8 @@ number defensible. This is the sequence, with the section that covers each step:
    ([§4](#4-conditions--your-finishes)).
 5. **Stitch anything split at a match line, and align it, before a single shape lands on it.**
    Once takeoffs live on a stitch it won't re-align ([§2](#2-opening-plans-and-moving-around)).
-6. **Measure the floors first**—`O`, room by room, condition by condition. Floors are the bulk
-   of the number and everything else derives from them ([§6](#6-one-click-area)).
+6. **Measure the floors first**—`A`, room by room, condition by condition. Floors are the bulk
+   of the number and everything else derives from them ([§5](#5-the-measuring-tools)).
 7. **Derive what follows instead of measuring it twice**: base off the rooms you just traced,
    **⟂ Transitions** for the line where two finishes meet—and read what it *reports and never
    counts*, because those are doorway thresholds you still owe
@@ -110,13 +124,15 @@ One caveat that side-by-side makes possible: a trace can't span two grouped shee
 
 Large floors often arrive cut across sheets at a **match line**—half the building on each. Side-by-side viewing doesn't help you *measure* across the cut; stitching does.
 
-1. In the gallery, select the split sheets (2–4, left-to-right selection order) and click **Stitch N into one surface**. They butt edge-to-edge—no gap—and open as **one** sheet with its own tab and scale (inherited when the members' scales agree).
+1. Press **G** (or choose **Sheets → Open gallery…**) to open the gallery. Select the split sheets (2–4, left-to-right selection order) and click **Stitch N into one surface** in the gallery footer. They butt edge-to-edge—no gap—and open as **one** sheet with its own tab and scale (inherited when the members' scales agree).
 2. **Join the match line**: click **Align** in the toolbar (it appears while a stitch is open), click a recognizable point near the joint, then click the **same drawn point** on the other sheet. That sheet slides so the two coincide—zoom in first for a tight joint, exactly like calibrating. Where the sheets overlap, each shows its own half up to the seam, so borders near the match line don't cover the plan.
-3. Work it like any sheet. A room that crosses the match line traces as **one shape**—manual tools and **One-Click** both work straight across the seam (the members' linework merges into one snap grid and one flood mask). Quantities, the Report, undo, and revisions treat the stitch as a normal sheet.
+3. Check another recognizable point along the joint and verify the stitched sheet's scale before measuring. **Align** translates a member sheet; it does not rotate or resize it. If the members use different scales or orientations, prepare matching source sheets first. Press **A** for Area and trace across the match line as **one shape**. One-Click is gated in the default build, so seam-crossing examples of it describe an explicitly enabled build.
 
 Notes: align the match line **before** tracing—once takeoffs live on a stitch it won't re-align (their coordinates ride the composite). Deleting a stitch is refused while takeoffs or markups live on it; reopen one anytime from its tab or the gallery's **Stitched surfaces** strip. The Marked Set PDF burns a stitch in as one composite page—members placed at their aligned offsets, each showing its own half up to the seam, shapes drawn once in the frame you measured them in—stamped as a stitched composite so nobody mistakes it for a sheet the architect issued.
 
-Stitching and aligning are yours alone—an AI agent driving OpenTakeoff [over MCP](MCP.md) has no stitch verb, on purpose: judging that two wall junctions are the same drawn point is human work, and a sloppy join quietly skews everything measured across the seam. If an agent will be doing the takeoff on a split floor, do the stitch and align yourself first, or have the agent measure the member sheets individually.
+Stitching and aligning are yours alone—an AI agent driving OpenTakeoff [over MCP](MCP.md) has no stitch verb, on purpose: judging that two wall junctions are the same drawn point is human work, and a sloppy join quietly skews everything measured across the seam. MCP cannot create, align, or measure on a stitched surface. The current MCP import/export path omits stitch records, so a browser stitch is not a lossless MCP handoff. Keep the browser's own takeoff export or project archive as the editable master, or have the MCP agent measure the member sheets individually with explicit scope boundaries.
+
+**If a control seems missing:** **Stitch N into one surface** is in the gallery footer and requires 2–4 selected sheets. **Align** appears only while a stitched surface is open. Reopen one from its tab or the gallery's **Stitched surfaces** strip. If Align refuses because takeoffs already exist, create a fresh stitch and align it before tracing. Deleting a stitch also refuses while takeoffs or markups exist.
 
 ### Levels (multi-floor sets)
 
@@ -220,7 +236,7 @@ A scale that arrives from an agent takeoff (an MCP session's export, imported he
 
 ### Metric
 
-The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, Excel, and the Marked Set legend read in m² / m (the SY column retires), and Calibrate takes meters. Supporting-material coverage fields and presets also follow the active units. It's display only—takeoffs and coverage rates keep their internal values, so flipping the toggle never changes a measurement or an order quantity.
+The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, Excel, and the Marked Set legend read in m² / m (the SY column retires), footprint dimensions read in metres and volumes in m³, and Calibrate takes meters. Supporting-material coverage fields and presets also follow the active units. It's display only—takeoffs and coverage rates keep their internal values, so flipping the toggle never changes a measurement or an order quantity.
 
 ---
 
@@ -233,13 +249,14 @@ A **condition** is one finish—`LVT-1`, `CPT-2`, `RB-1`—and it's what every m
 **+ condition** (in the Takeoffs panel footer, the top-bar palette band, or the compact strip) prompts for a finish tag and mints the condition with an auto-rotated color and hatch. The active condition's editor appears inline—in the panel's active row and in the top-bar band:
 
 - **Finish tag**—rename in place.
-- **× multiplier**—measure one identical unit, count it N times. Shows as ×N everywhere.
+- **× N units** (the multiplier, right after the tag)—for a repeating layout: measure one identical unit (one apartment, one hotel room) and count it N times instead of tracing it N times. Every quantity on the condition multiplies, the Report and the buy list included; the field lights cobalt while it's above 1 and the row wears a cobalt **×N** chip. Same finish somewhere that shouldn't multiply (the corridor)? Give that area its own condition with **⎘ Duplicate for another area…** and leave it at ×1.
 - **Waste %**—the allowance the Report adds on top of the measured quantity. Per condition, matched to the install: ~8% straight-lay LVP, ~15% diagonal, ~20% herringbone.
 - **Line** color, **Fill** color (or **No fill**), and the **hatch pattern**. In the top-bar band, **Line** and **Fill** are two swatch buttons that each open their own palette (one at a time; Esc or a click outside closes)—the swatch shows the current color, so the band reads at a glance. The docked panel keeps both palettes inline.—a picker grid of CAD hatches (plank, herringbone, tile, terrazzo…) that names the pattern under your cursor, so the canvas reads like the real drawing.
 - **Line style**—the outline dash for this finish's floor and linear takeoffs, on canvas and in the Marked Set.
 - **Object**—the marker used by this condition's Count takeoffs: the original color square, or a grouped built-in symbol. The low-voltage set covers CCTV cameras, data and Wi-Fi, racks, intrusion detectors and alarm equipment, access control and intercoms, fire-alarm devices, power supplies and junction boxes. The docked panel normally shows only the selected symbol; **Change** opens a compact picker with horizontally scrollable topic tabs and the active topic's icons, then closes after a choice. A selected symbol also appears beside the condition name and replaces its color square in the Report; conditions using **Color square** keep the original swatch. **Label** can be none, the condition tag, fixed custom text, or **Sequential**. Sequential defaults its prefix from the condition tag (`CAM` becomes `CAM-`) and lets you edit or clear it; each placement receives its own stable `CAM-1`, `CAM-2`, … label. The marker and plan labels also print in the Marked Set.
 - **H** (height, ft)—the default for **new** wall traces (Surface Area SF = LF × H) and the vertical-SF display. Existing walls keep the height they were drawn at—select a wall to change only that one (§5).
 - **T** (thickness, in)—a Linear run with thickness also computes border/feature-strip SF = LF × T⁄12. Changing it re-flows existing runs.
+- **↑ Rise** and **↓ Drop** (ft)—the vertical legs every Linear run of this condition adds to its plan length: LF = plan + rise + drop. A conduit condition with an 8′ drop prices every home run to the panel with its 8′ down; the plan only shows the flat path. Changing either re-flows existing runs, except a run you gave its own legs (§5, Linear). Derived base and transitions never take a leg.
 
 **Delete** (the row's ✕) asks first when the condition owns shapes—*"Delete 〈TAG〉 and its N takeoff(s)? This can't be undone."*—and means it: the cascade is deliberately outside the undo stack (§8).
 
@@ -253,7 +270,7 @@ The band under the toolbar is your working set: **pin** a condition there (the p
 
 The **☰ Takeoffs** rail button docks the panel (it starts collapsed; the palette band is the primary surface). Four tabs:
 
-- **Takeoffs**—every condition with live totals for the open sheets (`SF · SF wall · LF · EA`), a shape count, a **⌖** that zooms the canvas to the condition's takeoffs (double-clicking the row does the same), the Supporting Materials button, the pin, and delete. Above the list: a filter box, **A→Z** natural sort and **≡ grp** tag-family grouping (views only—hotkey numbering never changes). **⌘-click / ⇧-click** rows to bulk-select conditions, then set waste or line color on all of them, or bulk-delete.
+- **Takeoffs**—every condition with live totals for the open sheets (`SF · SF wall · LF · EA`), an **eye** that leads the row (click hides or shows that condition's takeoffs on the plan, count marks included; **⌥-click** shows only that one, and again restores the rest—a view only: hidden work still counts in totals, the Report and every export, and a red bar above the list counts what's hidden with **Show all**), a shape count, a **⌖** that zooms the canvas to the condition's takeoffs (double-clicking the row does the same), the Supporting Materials button, the pin, and delete. Above the list: a filter box, **A→Z** natural sort and **≡ grp** tag-family grouping (views only—hotkey numbering never changes). **⌘-click / ⇧-click** rows to bulk-select conditions, then set waste or line color on all of them, or bulk-delete.
 - **Library**—reusable condition templates, shared across every plan in this browser. **+ save 〈tag〉 to the library** snapshots the active condition (appearance, waste, H/T, materials); **Apply** adds it to any project as a fresh condition. A fresh workspace seeds from this library—tune your house conditions once and every new job starts with them.
 - **Materials**—a browser-wide materials library. Attaching a library material to a condition copies its values and keeps a link (⛓); library edits reach linked lines only when you push them, and overridden fields show amber with a per-field ↺ revert.
 - **Columns**—project-wide **custom columns** (for example, *CSI Division*) that classify conditions for report grouping and exports, and the **shape-label vocabulary** (§7).
@@ -381,9 +398,9 @@ On the canvas the crosshair **is** the cursor: the OS pointer hides in draw mode
 
 ### Area (`A`)
 
-Click vertex by vertex around the space; `⏎`, double-click, or the **Finish** button closes it at three or more points. The live readout shows the running segment length while you trace, and the committed shape reads SF, SY, and perimeter LF—select it any time later and the readout gives you both numbers again, so a footprint's LF never needs a second trace with the Linear tool.
+Click vertex by vertex around the space; `⏎`, double-click, or the **Finish** button closes it at three or more points. The live readout shows the running segment length while you trace, and the committed shape reads SF, SY, and perimeter LF—select it any time later and the readout gives you both numbers again, so a footprint's LF never needs a second trace with the Linear tool. Under those sits the footprint's **L × W**—the smallest rectangle around the ring, read as a drawing dimension (`12′ 6″ × 10′ 0″`, or `3.81 m × 3.05 m` in metric); exact for a rectangular room, the enclosing box for an L-shape. When the condition has an **H**, the line reads **L × W × H** and the `@H` line beneath it carries the vertical SF (perimeter × H) and the **volume** (area × H) in CY, or m³ in metric—so a fill, a slab or an excavation reads as three dimensions and a cube, not just an area.
 
-**Curved boundaries.** Buildings are not all right angles: a bowed wall, a radius corner, a curved curb or pool edge. You don't leave the tool for them—the readout carries a **╱ Straight / ⌒ Curve** switch, and you flip it *mid measurement*, as often as you like inside one shape.
+**Curved boundaries.** Buildings are not all right angles: a bowed wall, a radius corner, a curved curb or pool edge. You don't leave the tool for them—the toolbar's **Draft** menu (the style swatch between **45°** and the scale) carries a **╱ Straight / ⌒ Curve** switch, and you flip it *mid measurement*, as often as you like inside one shape.
 
 - **Curve** mode: **an arc is three clicks, and it is a real circle.** The clicks alternate—the first lands anywhere **on the bow**, the second on its **far end**—and together with the vertex you were already on, those three points define exactly one circle. That is the whole difference: a radius wall *is* a circle, so the arc **sits on it** instead of near it. The bow point draws as a round handle, and the arc redraws live as you aim the far end.
 - **`Q`** flips the switch once a trace is going.
@@ -401,7 +418,7 @@ Two clicks: one corner, then the opposite corner. Between them the cursor chip r
 
 ### Linear (`L`)
 
-An open run, two or more points → LF. The **╱ Straight / ⌒ Curve** switch works here too (see Area, above)—a run that bends partway along commits as one line. If the condition carries a **thickness**, the run also yields border SF (LF × thickness ÷ 12)—feature strips, borders, transitions. The live chip reads the running segment length, amber at 12′.
+An open run, two or more points → LF. The **╱ Straight / ⌒ Curve** switch works here too (see Area, above)—a run that bends partway along commits as one line. **Drop and Rise:** a run's LF is its plan length plus the condition's **↑ Rise** and **↓ Drop** (§4)—the live chip reads the plan length while you trace; the committed readout reads the total with the split beneath it (`42′ plan + ↑ 2′ + ↓ 8′`), as does the Measurements tally. Select a run and the **this run** row under the readout gives it its own rise and drop—a 0 there is a statement ("no drop on this one") that the condition default no longer overrides; ↺ returns the run to the defaults. If the condition carries a **thickness**, the run also yields border SF (LF × thickness ÷ 12)—feature strips, borders, transitions. The live chip reads the running segment length, amber at 12′.
 
 ### Surface Area (`S`)
 
@@ -541,7 +558,7 @@ Arm **Select** (`V`) and click a shape. Shapes stack by kind—filled Areas at t
 - **`⌫` with nothing else picked** deletes the shape.
 - A selected Count shows its **Plan label** in the lower readout. Edit it there to override or correct that one object's issued identifier; the condition's prefix and next number are unaffected.
 
-Quantities recompute live as you edit. Every completed gesture is one undo step (a drag that ends where it started records nothing), and editing a machine-made shape—One-Click or agent—grades it as *corrected* in its provenance, with the machine's original boundary frozen the first time you touch it. The **Edit** menu in the toolbar carries the same verbs—Copy, Paste, Duplicate, **Flip Horizontal**, **Flip Vertical**, Delete selected, Undo last point, Undo last shape, Redo—with their shortcuts beside them. Flip mirrors the selected shape about its own center (an isometry—SF/LF never change); it has no keyboard shortcut, only the menu.
+Quantities recompute live as you edit. Every completed gesture is one undo step (a drag that ends where it started records nothing), and editing a machine-made shape—One-Click or agent—grades it as *corrected* in its provenance, with the machine's original boundary frozen the first time you touch it. This includes imported agent traces made with manual measurement tools. Correcting a trace does not accept or approve it; review remains a separate action. The **Edit** menu in the toolbar carries the same verbs—Copy, Paste, Duplicate, **Flip Horizontal**, **Flip Vertical**, Delete selected, Undo last point, Undo last shape, Redo—with their shortcuts beside them. Flip mirrors the selected shape about its own center (an isometry—SF/LF never change); it has no keyboard shortcut, only the menu.
 
 ### Copy, paste, duplicate
 
@@ -579,7 +596,7 @@ Labels drive the Report's *Group: Label* mode and its by-label export sections (
 
 - **Deleting a condition.** The confirm says *"This can't be undone"* and means it: the cascade delete of its shapes doesn't record. A condition delete is a decision about the takeoff's structure, not a gesture (Revisions are your parachute—§11).
 - **Rescaling a sheet** and **restoring a revision** both **reset the stack**. Every recorded step froze quantities at the old scale (or the old timeline); undoing across that boundary would resurrect stale numbers, so the boundary clears it. A restore always banks the live takeoff first, so nothing is lost—it isn't on the `⌘Z` stack.
-- **Markups and condition edits.** The undo stack is for measured shapes (and approval seals). Moving a cloud or changing a waste % is a plain edit—change it back by hand.
+- **Markups and condition edits.** Annotation-toolbar edits and reviewed Sweep batches support undo alongside measured shapes and approval seals. Legacy markup-panel edits and condition waste edits remain plain edits.
 
 One more distinction: **Undo last shape** (Edit menu) and `⌫`-with-nothing-in-progress are not `⌘Z`—they *delete the newest shape* on the sheets you're viewing. That delete records normally, so `⌘Z` can bring the shape back.
 
@@ -693,6 +710,8 @@ Everything—drawings, scales, conditions, markups, RFIs, levels, tabs—autosav
 
 So take the takeoff out of the browser: **Sheet → Export takeoff…** writes `〈project〉.takeoff.json`—the exact document autosave writes, every shape, condition, scale, markup, RFI and seal—to a normal file you can back up, archive for years, carry to another machine, or hand to another estimator. **Sheet → Import takeoff…** reads it back as an editable takeoff, not a report. The plan PDF is not inside it: open the same PDF first, then import.
 
+**Sheet → Export project archive…** writes a `.otk` containing the current takeoff and current plan PDFs. It preserves stitched surfaces too. Saved revision snapshots and earlier versions of those PDFs are separate browser records and are not included. Opening the archive in a fresh workspace brings over the current work; it does not restore the revision history.
+
 If a saved project fails to load, autosave **pauses itself** and a banner says so—a load failure never overwrites your saved work with an empty canvas. And if OpenTakeoff updates in another tab, the stale tab asks for a reload instead of writing over the newer one.
 
 ### Optional: projects on Drive
@@ -727,11 +746,35 @@ The modal asks for an optional credit line and an attestation that you have the 
 
 ## 13. The Agent panel
 
+**Workspace layout.** Premium workspace is the default for browsers without a saved layout choice. From Classic, choose **⋯ → Premium layout — compact controls** for compact drawing controls. **Classic layout** returns immediately. Measuring tools keep their sidebar order and shortcuts; **All controls** reveals the existing toolbar for advanced settings. **Properties** opens the active condition editor. **Sheets** opens a searchable list, while the existing sheet tabs and visual gallery remain available. **Find an action** (Cmd/Ctrl+K outside text fields) searches tools, sheets, scale choices and file actions; use arrows and Enter, or click a result.
+
+**Premium workspace.** Choose graphite, light or HUD surfaces. Existing saved Classic choices are preserved; `?workspace=premium` opens Premium directly. **Layout** adjusts the surface and backlight strength. **Show floating quantity box** controls the canvas readout independently of **Show project quantity counter**; it starts off. Selected wall height remains editable in the drawing settings when the readout is hidden. **Draft**, beside **Snap** and **45°**, contains drawing conventions and Straight/Curve.
+
+**Request Premium.** Use **Request Premium** in the top toolbar (or the Classic **⋯** menu) to request early access to mobile/tablet workflows, advanced computer vision, estimates/pricing proposals, RFI workflows or submittal packages. These capabilities are in development. Submit your email, role, trade and main interest; name/company are optional, and product-news updates are unchecked by default. Only the form details are sent through Netlify to Kentucky AI; project plans and quantities are excluded. A local or self-hosted build without form processing shows a disabled preview.
+
+**One place for panel tools.** Quantities, Work, Markup list, Stamps, RFI register and Revisions live in the top toolbar. In Focus mode, the panel controls move to the right edge. **Create annotation** in the drawing toolbar creates clouds, callouts, text and highlights; **Markup list** opens existing annotations. Supporting materials remain under **Quantities → Materials** or a condition’s **Materials** button.
+
+**Inspect sheets before opening.** The visual gallery offers medium or large cards and a separate **Preview** action with **Actual pixels**. Previewing does not change the selected sheets. Escape closes the detailed preview first; a second Escape returns from the gallery.
+
+**Make it yours.** Open **Layout**, uncheck **Lock panel positions and sizes**, then drag the grip on Sheets, Work, Takeoffs or the measuring rail to either highlighted edge. Release in the middle to cancel. The same dialog has left/right selectors, and a focused grip accepts Left/Right arrow keys. Adjust Work/Sheets width in the dialog; Takeoffs retains its edge resize handle while unlocked. Lock again when comfortable. Lock protects panel positions and sizes, not measurements.
+
+Name and save an arrangement to restore its positions, widths, lock state and optional condition palette/quantity counter. Saving the same name replaces it; up to eight arrangements are retained. Panel open/closed state is not part of a saved arrangement. **Reset arrangement** restores the default without deleting named arrangements. Preferences belong to this browser and do not travel in project files or change another collaborator's layout. If browser storage is unavailable, Layout says the preference lasts only for this session.
+
+Choose **Work** in the toolbar to open **Work and review**. **Measurements** lists stored work across the project, including imported agent takeoffs and measurements made on the canvas. Search by condition, sheet, label, or author; use **Needs review** or **Agent** to narrow the list.
+
+The scale control stays beside Work and Report. On narrow windows, these controls wrap below the scrolling tool strip.
+
+Select a measurement to open its sheet and center its boundary. Its **Measurement receipt** shows the stored quantity, source, method, review state, scale state, vertices, and holes. **Mark reviewed** records your review for that measurement; undo restores its previous state. **Reviewed** describes the stored review decision, not a guarantee of accuracy. Missing attribution and quantities remain explicit.
+
+On smaller screens the panel opens as a drawer; on phones it fills the work area. Selecting a measurement returns you to the plan. **Open report →** opens the existing report. Floating totals clear both views. The condition’s **properties** disclosure above the drawing hides or shows its appearance controls.
+
+Select the **Agent** tab inside **Work** to run the browser agent. You do not need an AI connection to inspect an imported MCP takeoff. Closing the panel preserves its search and in-session task draft; page reload still discards uncommitted browser-agent proposals and the run log.
+
 The Agent panel is the newest way to run the engine: describe a takeoff in a sentence, and an AI model—**yours**, on your key, from your browser—works the sheet with the app's own tools and stages **dashed proposals you accept or reject**. It is a proposer, never a committer.
 
 ### What it is, structurally
 
-Open it from the rail (the target icon: *Agent — describe a takeoff; it stages dashed proposals you accept or reject*). Type a goal—*"Take off the carpet per the finish schedule on this sheet"*—and click **Run** (`⌘⏎`). The model runs a tool-use loop against a registry of the app's own deterministic tools:
+Open **Work**, then select **Agent**. Type a goal—*"Take off the carpet per the finish schedule on this sheet"*—and click **Run** (`⌘⏎`). The model runs a tool-use loop against a registry of the app's own deterministic tools:
 
 - **`list_sheets`**—what's open, with sizes and scale status;
 - **`read_sheet_text`**—the sheet's positioned text layer;
@@ -741,7 +784,7 @@ Open it from the rail (the target icon: *Agent — describe a takeoff; it stages
 - **`get_conditions` / `create_condition`**—your condition list (creation dedupes against existing tags);
 - **`propose_shapes`**—stage proposals for your review.
 
-**The model never invents geometry.** It can only propose rings the engine traced or coordinates grounded in what it read, and `propose_shapes` rejects anything uncited: *every proposal must cite evidence*. The run streams into the panel log—every tool call, every result, every refusal—capped at 24 steps, with a **■ Stop** button that halts it instantly.
+Proposals include evidence fields. Inspect the boundary and its claimed evidence before accepting it; those fields do not independently verify the geometry. The run streams into the panel log—every tool call, every result, every refusal—capped at 24 steps, with a **■ Stop** button that stops the run.
 
 ### The scale gate holds
 
@@ -760,6 +803,40 @@ A proposal whose sheet you've since closed (or unscaled) is skipped at accept wi
 ### Proposals from an MCP agent — one decision per batch
 
 Work that arrives from an MCP session (**Import takeoff…**, or a synced workspace) lands as dashed pencil too, and an agent can group it: `propose_takeoff` names a batch and every shape it commits afterwards belongs to it. On the canvas that batch is **one pill** — *Accept "Level 1 offices per finish schedule" · 3* — with a ✕ to reject it. Accept inks the whole batch in one step (one `⌘Z`); Reject removes its pending shapes (`⌘Z` restores them). Shapes you already accepted are never part of a batch again, so an agent that revises or withdraws its proposal cannot touch your ink. Anything un-batched keeps the plain **Accept N proposed shapes** pill.
+
+### Reviewing an agent's takeoff, start to finish
+
+The whole loop on a real sheet, with the screens you will see. The takeoff below was drawn by an MCP agent on the bundled sample plan and handed over as its JSON export; nothing in it is approved until you act.
+
+1. **Open the plan, then set its scale.** Open the same PDF the agent worked on and adopt the plan's own note (**Set scale… → Plan says**). Import refuses a takeoff whose calibration differs from the sheet's, so the agent's scale and yours must agree; here both are 1/8" = 1'-0".
+
+   ![The plan open with its scale adopted](img/agent-review/03-scale-adopted.jpg)
+
+2. **Sheet → Import takeoff…** The agent's rings land as dashed pencil, one **Accept** pill for the whole batch, and the status bar tells you how many shapes are pending and which finish tags matched yours. Every shape is `origin: agent`, unreviewed.
+
+   ![Six pending rings and one Accept pill](img/agent-review/04-imported-pending.jpg)
+
+3. **Inspect and correct.** Arm **Select** (`V`) and click a ring: its corner handles appear and the readout shows its SF. Drag a corner, insert a vertex on an edge, or delete one (§7). Correcting a pending shape grades it as *corrected* in provenance and freezes the agent's original ring beside your fix; it does not accept it.
+
+   ![A pending ring selected with its handles](img/agent-review/05-shape-selected.jpg)
+
+   ![After nudging one corner the shape re-prices live](img/agent-review/06-vertex-corrected.jpg)
+
+4. **Accept.** Click the pill (or `⏎` with nothing mid-draw): the batch inks in one step and one `⌘Z` undoes it. Reject with the pill's ✕, or select one shape and press `⌫`. This click is the human decision the agent could not make; no export, verdict or schema check substitutes for it.
+
+   ![The batch accepted: pencil is now ink](img/agent-review/07-batch-accepted.jpg)
+
+5. **Save it two ways.** **Sheet → Export takeoff…** writes the editable JSON with your review state and corrections; **Sheet → Export project archive…** writes the `.otk` that carries the plan PDF with it.
+
+6. **Check the deliverables.** **Report** shows per-finish SF from the accepted rings; **Print → Download marked set** burns them into the sheet.
+
+   ![The report after acceptance](img/agent-review/10-report.jpg)
+
+7. **Reopen on a clean machine.** Drop the `.otk` on an empty OpenTakeoff: the plan, its scale, your conditions and every accepted shape come back as ink, corrections and frozen originals included. The sheet gallery opens first because the archive holds two sheets; close it to work.
+
+   ![The archive reopened in a fresh browser profile](img/agent-review/12-archive-reopened.jpg)
+
+The screens above were captured in a throwaway browser driven by a script against the real app, so they prove the controls and the persistence, not a person's approval; a takeoff is approved when an estimator clicks Accept in their own browser.
 
 ### Shared floor — when two conditions claim the same room
 
@@ -800,7 +877,7 @@ What's sent, and only when you run an AI feature: the sheet region in question a
 
 The same engine speaks [MCP](https://modelcontextprotocol.io), one command away:
 `npx -y opentakeoff-mcp` (or the one-click `opentakeoff-mcp.mcpb` bundle for Claude Desktop). An
-MCP client gets **<!--tool-count-->52<!--/tool-count--> tools** plus browsable sheet resources, over the very same measuring engine,
+MCP client gets **<!--tool-count-->53<!--/tool-count--> tools** plus browsable sheet resources, over the very same measuring engine,
 with the same scale gate and the same provenance receipts:
 
 | Group | Tools |
@@ -1057,3 +1134,31 @@ those are the ones worth pinning down before you rely on a number.
 ---
 
 *OpenTakeoff is Apache-2.0 and the codebase is deliberately readable—when you outgrow the manual, [`FEATURES.md`](../FEATURES.md) maps every capability to its code. Driving it from an agent instead? [`AGENT_GUIDE.md`](AGENT_GUIDE.md) is this document's counterpart.*
+
+### Marked-set quantity units
+
+The marked-set cover shows linear allowances in LF (or m in metric), alongside area allowances in SF (or m²). Measured quantities stay unchanged; waste applies to the allowance column. Supporting-material coverage comes from Report material rows and does not require another floor polygon.
+
+### Annotation cleanup and small overlap warnings
+
+An agent can shorten or clear annotation text with `edit_annotation`, then undo
+that text edit. This leaves positions, dimension lengths, quantities, links and
+review records unchanged. An RFI-linked note requires review in the browser RFI
+register. Human approval remains a separate action.
+
+The scope collision list ignores machine-precision residue along shared edges.
+Real positive overlaps that round to zero display **<0.01 SF shared**, so a small
+warning does not appear to claim exactly zero area. Review the marked boundary
+before changing either trace.
+
+### Shared knowledge wiki
+
+The [wiki](wiki/README.md) gives people and agents the same starting points for
+current support, architecture, saved records, workflows and quantity meanings.
+An MCP agent reads the packaged pages at `takeoff://wiki`; a person follows the
+same pages here. The [stitching workflow](wiki/workflows.md#human-open-stitch-and-measure)
+explains the browser controls and the current MCP transport limit explicitly.
+
+## Privacy and terms
+
+Open the guide (`?`) for links to the [Privacy Policy](https://opentakeoff.kentucky-ai.com/privacy/) and [Terms of Service](https://opentakeoff.kentucky-ai.com/terms/). These explain local storage, optional cloud and AI connections, contributions, and responsibility for reviewed estimates.

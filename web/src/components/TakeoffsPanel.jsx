@@ -553,12 +553,7 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
         <input name="condition-finish-tag" value={c.finish_tag} onChange={(e) => onUpdateCond({ finish_tag: e.target.value })}
           title="Rename this condition / finish tag"
           style={{ width: 88, padding: "3px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", fontFamily: "var(--f-mono)", fontWeight: 700, fontSize: 12, color: "var(--ink)" }} />
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }} title="Multiply this condition by N identical units (measure one, ×N)">
-          <span style={{ color: "var(--ink-muted)" }}>×</span>
-          <input name="condition-multiplier" type="number" min="1" step="1" value={c.multiplier || 1}
-            onChange={(e) => onUpdateCond({ multiplier: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-            style={{ width: 46, padding: "3px 5px", borderRadius: 0, border: "1px solid var(--ink-faint)", fontSize: 12 }} />
-        </span>
+        <MultiplierField value={c.multiplier || 1} onChange={(n) => onUpdateCond({ multiplier: n })} />
         <span style={{ display: "flex", alignItems: "center", gap: 4 }} title="Waste % — a flooring allowance added on top of the measured quantity in the Report. You choose it per condition (e.g. ~8% straight-lay LVP, ~15% diagonal, ~20% herringbone).">
           <span style={{ color: "var(--ink-muted)" }}>Waste</span>
           <input name="condition-waste-pct" type="number" min="0" step="1" value={c.waste_pct ?? 0}
@@ -700,6 +695,16 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
           <Icon name="thickness" size={13} /><span style={{ color: "var(--ink-muted)" }}>T</span>
           <DimParamInput name="condition-thickness-in" internal={c.thickness_in} units={units} kind="thickness" width={50}
             onCommit={(v) => onSetCondParam("thickness_in", v)} />
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }} title={`Rise (${heightUnit(units)}) — the vertical leg UP every Linear run of this condition adds to its plan length (a home run rising to a box, a riser to the ceiling). LF = plan + rise + drop. Changing it re-flows existing runs; select a run to give it its own rise.`}>
+          <span style={{ color: "var(--ink-muted)" }}>↑ Rise</span>
+          <DimParamInput name="condition-rise-ft" internal={c.rise_ft} units={units} kind="height" width={48}
+            onCommit={(v) => onSetCondParam("rise_ft", v)} />
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }} title={`Drop (${heightUnit(units)}) — the vertical leg DOWN every Linear run of this condition adds to its plan length (a drop from the ceiling to a panel or device). LF = plan + rise + drop. Changing it re-flows existing runs; select a run to give it its own drop.`}>
+          <span style={{ color: "var(--ink-muted)" }}>↓ Drop</span>
+          <DimParamInput name="condition-drop-ft" internal={c.drop_ft} units={units} kind="height" width={48}
+            onCommit={(v) => onSetCondParam("drop_ft", v)} />
         </span>
       </div>
       {conditionColumns.length > 0 && isRow && rule()}
@@ -916,8 +921,75 @@ function TransitionsAction({ cond: c, sources, draft, setDraft, result, setResul
   );
 }
 
+// The tag's floor in a condition row — wide enough for "CPT-12 ×120". Below
+// it the row wraps its action cluster rather than squeeze the tag away.
+export const ROW_TAG_MIN_W = 104;
+
+// ×N on a condition row — a multiplier silently scales every quantity under
+// the condition, so it reads as a chip, not as muted text after the tag.
+// Nothing at ×1.
+export function MultiplierChip({ mult }) {
+  if (!(mult > 1)) return null;
+  return (
+    <span data-multiplier-chip title={`Every quantity on this condition is multiplied by ${mult} — measure one unit, count it ${mult} times`}
+      style={{ marginLeft: 6, padding: "0 4px", fontFamily: "var(--f-mono,monospace)", fontSize: 10.5, fontWeight: 700, color: "var(--cobalt)", border: "1px solid var(--cobalt)", borderRadius: 3 }}>×{mult}</span>
+  );
+}
+
+// "× [N] units" in the condition editor — the repeating-unit multiplier (trace
+// one apartment, count it 120 times). Labelled because a bare × beside a small
+// number box read as nothing; lit cobalt while it is actually multiplying.
+export function MultiplierField({ value, onChange }) {
+  const live = value > 1;
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "default" }}
+      title="Repeating units — measure one identical unit and multiply every quantity on this condition by N (Report and buy list included). Need the same finish at ×1 elsewhere? Supporting Materials → Duplicate for another area.">
+      <span style={{ color: live ? "var(--cobalt)" : "var(--ink-muted)", fontWeight: live ? 700 : 400 }}>×</span>
+      <input name="condition-multiplier" type="number" min="1" step="1" value={value}
+        onChange={(e) => onChange(Math.max(1, parseInt(e.target.value, 10) || 1))}
+        style={{ width: 46, padding: "3px 5px", borderRadius: 0, border: `1px solid ${live ? "var(--cobalt)" : "var(--ink-faint)"}`, fontSize: 12, fontWeight: live ? 700 : 400 }} />
+      <span style={{ color: live ? "var(--cobalt)" : "var(--ink-muted)" }}>{value === 1 ? "unit" : "units"}</span>
+    </label>
+  );
+}
+
+// Eye (#440) — leads a condition row, where a layer list puts it. Click hides /
+// shows that condition's takeoffs on the canvas; ⌥-click isolates it.
+// stopPropagation on click AND double-click: the row's own gestures (activate /
+// zoom-to) must not fire under a fast toggle. Exported so the markup and the
+// click contract are testable without mounting the whole panel.
+export function ConditionEye({ tag, hidden, onToggle }) {
+  return (
+    <button type="button" aria-pressed={!hidden} aria-label={`${hidden ? "Show" : "Hide"} ${tag} on the plan`}
+      onClick={(e) => { e.stopPropagation(); onToggle(!!e.altKey); }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      title={keyText(hidden ? "Hidden on the plan — click to show (⌥-click shows only this one). Still counted in totals, report and exports." : "Hide on the plan (⌥-click shows only this one). Hiding never changes a quantity.")}
+      style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 22, padding: 0, borderRadius: 0, border: `1px solid ${hidden ? "var(--c-danger)" : "var(--ink-faint)"}`, background: hidden ? "var(--c-danger)" : "transparent", color: hidden ? "var(--paper-bright)" : "var(--ink)", cursor: "pointer", lineHeight: 0 }}>
+      <Icon name={hidden ? "eyeOff" : "eye"} size={15} />
+    </button>
+  );
+}
+
+// Hidden-conditions bar (#440) — a half-hidden sheet must never pass for a
+// finished one, so the state is loud and one click undoes it. Renders nothing
+// while everything is showing.
+export function HiddenConditionsBar({ hidden, total, onShowAll }) {
+  if (!hidden) return null;
+  return (
+    <div role="status" style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid var(--ink-faint)", background: "var(--c-danger)", color: "var(--paper-bright)", flexShrink: 0, fontSize: 11, fontWeight: 600 }}>
+      <Icon name="eyeOff" size={14} />
+      <span style={{ flex: 1, minWidth: 0 }}>{hidden} of {total} hidden on the plan — totals unchanged</span>
+      <button type="button" onClick={onShowAll} title="Show every hidden condition again"
+        style={{ flexShrink: 0, padding: "2px 8px", borderRadius: 0, border: "1px solid var(--paper-bright)", background: "transparent", color: "var(--paper-bright)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>Show all</button>
+    </div>
+  );
+}
+
+// stable empty default — a fresh Set per render would defeat React.memo
+const NO_HIDDEN = new Set();
+
 function TakeoffsPanel({
-  open, width, overlay = false, multiSheet, units = "imperial",
+  open, width, overlay = false, multiSheet, dockSide, layoutLocked = false, dockHandle, units = "imperial",
   conditions, activeCond, visRowById, projRowById = new Map(), conditionColumns, shapeLabels = [], templates, palette = [], rollByCond = null,
   transitionSources = [],
   matLib, matLibById, linkedCountById,
@@ -936,6 +1008,7 @@ function TakeoffsPanel({
   onAddColumn, onRenameColumn, onDeleteColumn, onAddColumnValue, onRemoveColumnValue, onRenameColumnValue,
   onAddLabel, onRenameLabel, onRemoveLabel,
   onToggleCollapse, onHoldGesture, onTogglePin,
+  hiddenConds = NO_HIDDEN, onToggleHidden,
 }) {
   const [panelTab, setPanelTab] = useState("takeoffs");       // "takeoffs" | "library" | "materials" | "columns"
   const [condQuery, setCondQuery] = useState("");             // live filter over the condition list (transient, never persisted)
@@ -1031,6 +1104,8 @@ function TakeoffsPanel({
   // bulk actions run on the LIVE intersection — checkedConds is view state and
   // deletes elsewhere (or a stale set) must never inflate a count or a patch
   const liveChecked = conditions.filter((c) => checkedConds.has(c.id));
+  // hidden count over the LIVE list — never claims ids a delete took (#440)
+  const liveHidden = hiddenConds.size ? conditions.reduce((n, c) => n + (hiddenConds.has(c.id) ? 1 : 0), 0) : 0;
   const liveIds = () => new Set(liveChecked.map((c) => c.id));
   const toggleChecked = (id) => {
     setCheckedConds((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -1069,7 +1144,7 @@ function TakeoffsPanel({
     const d = dragRef.current; if (!d) return;
     if (e.buttons === 0) { onResizeEnd(e); return; }   // release happened off-window — a missed pointerup must not leave a phantom drag
     onHoldGesture();
-    d.w = clampPanelW(d.sw + (d.sx - e.clientX));
+    d.w = clampPanelW(d.sw + (d.sx - e.clientX) * (dockSide === "left" ? -1 : 1));
     if (rootRef.current) rootRef.current.style.width = `${d.w}px`;
   };
   // shared by pointerup / pointercancel / lostpointercapture — any way the
@@ -1105,6 +1180,7 @@ function TakeoffsPanel({
     const on = c.id === activeCond;
     const matOn = on && panelMatOpen;
     const checked = checkedConds.has(c.id);
+    const hidden = hiddenConds.has(c.id);        // takeoffs hidden on the canvas (#440) — view only, quantities unaffected
     const pinIdx = palette.indexOf(c.id);        // position in the top-bar palette (−1 = not pinned)
     const pinned = pinIdx >= 0;
     // 1–9 hotkey badge follows the same rule as the keys (and the strip): palette
@@ -1123,14 +1199,18 @@ function TakeoffsPanel({
           }}
           onDoubleClick={() => onLocate(c.id)}
           title={reassigning ? "Reassign selected shape to this condition" : keyText("Make this the active condition (double-click zooms to its takeoffs · ⌘-click / ⇧-click selects for bulk edit · drag to the top-bar palette for one-click access)")}
-          style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", cursor: "pointer", outline: reassigning ? "1px dashed var(--cobalt)" : "none", outlineOffset: -3, userSelect: "none" }}>
+          style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, rowGap: 5, padding: "9px 12px", cursor: "pointer", outline: reassigning ? "1px dashed var(--cobalt)" : "none", outlineOffset: -3, userSelect: "none" }}>
           {hot && <span title={pinned ? `Palette shortcut — press ${hIdx + 1} to activate` : `Press ${hIdx + 1} to activate (pin to lock this number)`} style={{ fontSize: 9, fontFamily: "var(--f-mono,monospace)", color: pinned ? "var(--cobalt)" : "var(--ink-muted)", border: `1px solid ${pinned ? "var(--cobalt)" : "var(--ink-faint)"}`, borderRadius: 3, padding: "0 3px", flexShrink: 0 }}>{hIdx + 1}</span>}
-          <span style={{ borderRadius: 4, overflow: "hidden", lineHeight: 0, flexShrink: 0 }}><ConditionMark condition={c} /></span>
-          <div style={{ minWidth: 0, flex: 1 }}>
+          <ConditionEye tag={c.finish_tag} hidden={hidden} onToggle={(isolate) => onToggleHidden(c.id, isolate)} />
+          <span style={{ borderRadius: 4, overflow: "hidden", lineHeight: 0, flexShrink: 0, opacity: hidden ? 0.35 : 1 }}><ConditionMark condition={c} /></span>
+          {/* the tag is the row's identity: it holds a floor (ROW_TAG_MIN_W) and
+              the action cluster wraps under it on a narrow panel, instead of the
+              tag collapsing to nothing beside buttons that never shrink */}
+          <div style={{ minWidth: 0, flex: `1 1 ${ROW_TAG_MIN_W}px`, opacity: hidden ? 0.55 : 1 }}>
             <div style={{ fontWeight: on ? 700 : 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {/* a twin reads as one: whose it is, and how many of its rows have gone their own way */}
               {c.variant_of ? <span aria-hidden title="A twin — its materials follow another condition" style={{ color: "var(--ink-faint)", fontWeight: 400 }}>↳ </span> : null}
-              {c.finish_tag}{mult > 1 ? <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}> ×{mult}</span> : null}
+              {c.finish_tag}<MultiplierChip mult={mult} />
               {c.variant_of && localCount(c) > 0 ? (
                 <span title={`${localCount(c)} material row${localCount(c) === 1 ? "" : "s"} no longer follow${localCount(c) === 1 ? "s" : ""} the family`}
                   style={{ marginLeft: 5, fontFamily: "var(--f-mono,monospace)", fontSize: 9, fontWeight: 500, color: "var(--cobalt)", border: "1px solid var(--cobalt)", borderRadius: 3, padding: "0 3px" }}>{localCount(c)}</span>
@@ -1145,6 +1225,7 @@ function TakeoffsPanel({
               ) : null}
             </div>
           </div>
+          <span data-row-actions style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0, marginLeft: "auto" }}>
           <span style={{ fontFamily: "var(--f-mono,monospace)", fontSize: 10.5, color: "var(--ink-muted)", flexShrink: 0 }}>{shapeCount}▦</span>
           {/* scope collision (#366): this condition shares floor with another
               (or with itself — a double trace). The badge is the count; the
@@ -1158,7 +1239,7 @@ function TakeoffsPanel({
           <button onClick={(e) => { e.stopPropagation(); onSetActive(c.id); setPanelMatOpen((v) => (on ? !v : true)); }}
             title="Supporting Materials — labor, subfloor & materials for this condition"
             style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: matOn ? "var(--ink)" : "transparent", color: matOn ? "var(--paper-bright)" : "var(--ink-muted)", cursor: "pointer", fontSize: 11 }}>
-            <Icon name="product" size={11} />{c.materials?.length ? c.materials.length : ""}
+            <Icon name="product" size={11} />Materials{c.materials?.length ? ` (${c.materials.length})` : ""}
           </button>
           <button onClick={(e) => { e.stopPropagation(); onTogglePin(c.id); }}
             title={pinned ? "Unpin from the top-bar palette" : (palette.length >= 9 ? "Palette is full (9)" : "Pin to the top-bar palette for one-click access")}
@@ -1167,6 +1248,7 @@ function TakeoffsPanel({
           </button>
           <button onClick={(e) => { e.stopPropagation(); onDeleteCondition(c.id); }} title="Delete this condition (and its takeoffs)"
             style={{ flexShrink: 0, padding: "2px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--c-danger)", cursor: "pointer", fontSize: 12 }}>✕</button>
+          </span>
         </div>
         {/* properties for the ACTIVE condition — the appearance editing that
             used to live in its own toolbar row above the canvas. Extracted to
@@ -1183,7 +1265,7 @@ function TakeoffsPanel({
                   <span style={{ color: "var(--ink-muted)" }}>{p.same_condition ? "⧉" : "↔"}</span>
                   <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {p.same_condition ? `double trace${mine.label ? ` · ${mine.label}` : ""}` : `${other.condition}${other.label ? ` · ${other.label}` : ""}`}
-                    <span style={{ color: "var(--ink-muted)" }}> · {p.shared_sf} SF shared · {Math.round(p.fraction_of_smaller * 100)}%{p.a.reviewed && p.b.reviewed ? " · both accepted" : ""}</span>
+                    <span style={{ color: "var(--ink-muted)" }}> · {p.shared_sf === 0 ? "<0.01" : p.shared_sf} SF shared · {Math.round(p.fraction_of_smaller * 100)}%{p.a.reviewed && p.b.reviewed ? " · both accepted" : ""}</span>
                   </span>
                   <button onClick={() => onLookAtCollision?.(p)} title="Frame both shapes on the plan"
                     style={{ flexShrink: 0, padding: "1px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 10.5, fontWeight: 600 }}>Look</button>
@@ -1307,18 +1389,18 @@ function TakeoffsPanel({
     // docking beside it — a docked 240px+ column plus the canvas doesn't fit a
     // phone (the panel was covering the whole screen). Desktop docked layout
     // is unchanged. The header's » collapse button is the close affordance.
-    <div ref={rootRef} style={overlay
-      ? { position: "absolute", top: 0, right: 0, bottom: 0, width: "min(100%, 420px)", zIndex: Z.drawer, boxShadow: "var(--shadow-pop)", display: "flex", background: "var(--paper-bright)", borderLeft: "1px solid var(--ink-faint)", fontSize: 12.5 }
-      : { width, flexShrink: 0, display: "flex", background: "var(--paper-bright)", borderLeft: "1px solid var(--ink-faint)", fontSize: 12.5 }}>
-      {!overlay && <div onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeEnd}
+    <div ref={rootRef} data-workspace-takeoffs data-dock-side={dockSide} style={overlay
+      ? { position: "absolute", top: 0, [dockSide === "left" ? "left" : "right"]: 0, bottom: 0, width: "min(100%, 420px)", zIndex: Z.drawer, boxShadow: "var(--shadow-pop)", display: "flex", background: "var(--paper-bright)", borderLeft: "1px solid var(--ink-faint)", fontSize: 12.5 }
+      : { width, order: dockSide ? dockSide === "left" ? -11 : 11 : undefined, flexShrink: 0, display: "flex", background: "var(--paper-bright)", borderLeft: "1px solid var(--ink-faint)", fontSize: 12.5 }}>
+      {!overlay && !layoutLocked && <div onPointerDown={onResizeDown} onPointerMove={onResizeMove} onPointerUp={onResizeEnd}
         onPointerCancel={onResizeEnd} onLostPointerCapture={onResizeEnd}
         title="Drag to resize"
-        style={{ width: 5, flexShrink: 0, cursor: "col-resize", touchAction: "none", background: "transparent", borderRight: "1px solid var(--ink-faint)" }} />}
+        style={{ order: dockSide === "left" ? 1 : undefined, width: 5, flexShrink: 0, cursor: "col-resize", touchAction: "none", background: "transparent", borderRight: "1px solid var(--ink-faint)" }} />}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", background: "var(--ink)", color: "var(--paper-cream)", flexShrink: 0 }}>
-          <span style={{ display: "inline-flex", gap: 2 }}>
+        <div data-takeoffs-header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", background: "var(--ink)", color: "var(--paper-cream)", flexShrink: 0 }}>
+          {dockHandle}<span style={{ display: "inline-flex", gap: 2 }}>
             {[["takeoffs", `Takeoffs · ${multiSheet ? "these sheets" : "this sheet"}`], ["library", `Library${templates.length ? ` (${templates.length})` : ""}`], ["materials", `Materials${matLib.length ? ` (${matLib.length})` : ""}`], ["columns", `Columns${conditionColumns.length ? ` (${conditionColumns.length})` : ""}`]].map(([id, label]) => (
-              <button key={id} onClick={() => setPanelTab(id)}
+              <button key={id} aria-pressed={panelTab === id} onClick={() => setPanelTab(id)}
                 style={{ padding: "3px 8px", border: "none", borderBottom: panelTab === id ? "2px solid var(--paper-cream)" : "2px solid transparent", background: "none", color: "var(--paper-cream)", opacity: panelTab === id ? 1 : 0.65, cursor: "pointer", fontWeight: 700, fontSize: 12.5 }}>{label}</button>
             ))}
           </span>
@@ -1365,6 +1447,7 @@ function TakeoffsPanel({
               style={{ marginLeft: "auto", padding: "2px 6px", border: "none", background: "none", color: "var(--ink-muted)", cursor: "pointer", fontSize: 12 }}>✕</button>
           </div>
         )}
+        <HiddenConditionsBar hidden={liveHidden} total={conditions.length} onShowAll={() => onToggleHidden(null)} />
         <div style={{ flex: 1, overflow: "auto" }}>
           {conditions.length === 0 && <div style={{ padding: "12px", color: "var(--ink-muted)" }}>No conditions yet — add one and start tracing.</div>}
           {condGroups.map((g) => (
@@ -1413,7 +1496,7 @@ function TakeoffsPanel({
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.finish_tag}</div>
                   <div style={{ fontFamily: "var(--f-mono,monospace)", fontSize: 10.5, color: "var(--ink-muted)" }}>
-                    {t.waste_pct || 0}% waste{t.height_ft != null ? ` · H ${dimInputStr(t.height_ft, units, "height")}${units === "metric" ? " m" : "′"}` : ""}{t.thickness_in != null ? ` · T ${dimInputStr(t.thickness_in, units, "thickness")}${units === "metric" ? " mm" : "″"}` : ""}{t.materials?.length ? ` · ${t.materials.length} material${t.materials.length === 1 ? "" : "s"}` : ""}
+                    {t.waste_pct || 0}% waste{t.height_ft != null ? ` · H ${dimInputStr(t.height_ft, units, "height")}${units === "metric" ? " m" : "′"}` : ""}{t.thickness_in != null ? ` · T ${dimInputStr(t.thickness_in, units, "thickness")}${units === "metric" ? " mm" : "″"}` : ""}{t.rise_ft > 0 ? ` · ↑${dimInputStr(t.rise_ft, units, "height")}${units === "metric" ? " m" : "′"}` : ""}{t.drop_ft > 0 ? ` · ↓${dimInputStr(t.drop_ft, units, "height")}${units === "metric" ? " m" : "′"}` : ""}{t.materials?.length ? ` · ${t.materials.length} material${t.materials.length === 1 ? "" : "s"}` : ""}
                   </div>
                 </div>
                 <button onClick={() => { onApplyTemplate(t); setPanelTab("takeoffs"); }} title="Add a condition from this template to the takeoff"

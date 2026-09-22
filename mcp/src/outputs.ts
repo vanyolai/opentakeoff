@@ -8,6 +8,7 @@
 // output (summary rows, export payload) use .passthrough() so a field added
 // upstream widens the reply instead of failing validation.
 import { z } from "zod";
+import { REPORT_SCHEMA } from "../../web/src/lib/takeoffConstants.ts";
 
 const point = z.tuple([z.number(), z.number()]);
 
@@ -146,6 +147,7 @@ export const measurePolygonOutput = {
   area_sf: z.number(),
   perimeter_lf: z.number(),
   nverts: z.number().int(),
+  arcs: z.number().int().optional().describe("How many arc_through bows were laid — present only when the trace was bent; the vertices reported are the baked arc, not the three points you gave"),
   shape_id: z.string().optional().describe("Present when condition was passed and the shape committed"),
   warning: z.string().optional().describe("Mixed-scale warning (#153): a scale note disagreeing with the sheet's sits in the measured region — verify before trusting these numbers"),
 };
@@ -157,6 +159,7 @@ export const measureSurfaceOutput = {
   length_lf: z.number().describe("The traced run's open length"),
   area_sf: z.number().describe("length_lf × height_ft — the wall SF committed"),
   npts: z.number().int(),
+  arcs: z.number().int().optional().describe("How many arc_through bows were laid — present only when the trace was bent; the vertices reported are the baked arc, not the three points you gave"),
   shape_id: z.string(),
 };
 
@@ -289,8 +292,13 @@ export const symbolSweepOutput = {
 };
 
 export const measureLineOutput = {
-  length_lf: z.number(),
+  length_lf: z.number().describe("The run's TOTAL length: plan trace + rise + drop (#441)"),
   npts: z.number().int(),
+  plan_lf: z.number().optional().describe("The flat X–Y trace alone — present only when the run carries a vertical leg"),
+  vertical_lf: z.number().optional().describe("rise_ft + drop_ft — present only when a leg exists"),
+  rise_ft: z.number().optional().describe("The rise this run resolved to (its own, else the condition default) — present with vertical_lf"),
+  drop_ft: z.number().optional().describe("The drop this run resolved to — present with vertical_lf"),
+  arcs: z.number().int().optional().describe("How many arc_through bows were laid — present only when the trace was bent; the vertices reported are the baked arc, not the three points you gave"),
   shape_id: z.string().optional().describe("Present when condition was passed and the shape committed"),
 };
 
@@ -324,7 +332,8 @@ const scopeSide = z.object({
 });
 export const scopePairRow = z.object({
   sheet_id: z.string(), a: scopeSide, b: scopeSide,
-  shared_sf: z.number().describe("Exact polygon intersection through the sheet's scale"),
+  shared_sf: z.number().describe("Polygon intersection through the sheet's scale, rounded to two decimals"),
+  note: z.string().optional().describe("Explains a positive overlap whose SF rounds to zero"),
   fraction_of_smaller: z.number().describe("shared ÷ the smaller shape's area (1 = the smaller sits entirely inside the other)"),
   iou: z.number().describe("Symmetric intersection-over-union — ≥ 0.5 is the room eval's own 'same space claimed twice' bar"),
   same_condition: z.boolean().describe("true = a double trace on ONE condition (its own list), false = two conditions claiming one floor"),
@@ -354,7 +363,8 @@ export const scopeMergeOutput = {
 // ── Proposals (#365) ────────────────────────────────────────────────────────
 const conditionKnobs = z.object({
   finish_tag: z.string().optional(), waste_pct: z.number().optional(), multiplier: z.number().optional(),
-  height_ft: z.number().optional(), roll_setup: z.object({}).passthrough().nullable().optional(),
+  height_ft: z.number().optional(), rise_ft: z.number().optional(), drop_ft: z.number().optional(),
+  roll_setup: z.object({}).passthrough().nullable().optional(),
 }).passthrough();
 export const proposalRow = z.object({
   proposal_id: z.string(), label: z.string(), rationale: z.string(),
@@ -431,8 +441,12 @@ export const exportDxfOutput = {
 export const exportTakeoffOutput = {
   schema: z.string(),
   project_name: z.string(),
-  units: z.string(),
-  sheets: z.array(z.object({ sheet_id: z.string(), units_per_px: z.number() })),
+  units: z.string().optional().describe("Present only for a metric project; absent means imperial — the app's own diff-only convention"),
+  sheets: z.array(z.object({
+    sheet_id: z.string(), units_per_px: z.number(),
+    scale_source: z.string().optional().describe("How the exported calibration was established"),
+    scale_confirmed: z.boolean().optional().describe("False for agent-set calibration until a human confirms it"),
+  })),
   conditions: z.array(z.object({
     id: z.string(),
     finish_tag: z.string(),
@@ -455,10 +469,11 @@ export const exportTakeoffOutput = {
   }).passthrough()),
   markups: z.array(z.unknown()),
   approvals: z.array(z.unknown()).optional().describe("Approval-family records (#176) — the estimator's APPROVED seals and the agent's verdict marks {id, actor, ts, sheet_id, at:[nx,ny], shape_id?, text?}. Present only when any exist (the canvas payload's own convention), so a verdict-free export stays byte-identical"),
+  rfis: z.array(z.unknown()).optional().describe("Live RFI records; withdrawn tombstones are omitted"),
   sheet_group: z.array(z.unknown()),
   last_group: z.array(z.unknown()),
   sheet_tabs: z.array(z.unknown()),
-  sheet_levels: z.object({}).passthrough(),
+  sheet_levels: z.object({}).passthrough().optional().describe("Present only when a sheet carries a level label (the app omits it when empty)"),
   proposals: z.array(z.object({ id: z.string(), label: z.string(), rationale: z.string(), created_at: z.string(), withdrawn_at: z.string().optional() }).passthrough()).optional()
     .describe("Proposal batches (#365) — present only when any exist. Shapes reference them by origin.proposal_id; the canvas shows one Accept per batch"),
   condition_edit_proposals: z.array(z.object({ id: z.string(), condition_id: z.string(), proposed: z.object({}).passthrough(), rationale: z.string(), proposed_at: z.string() }).passthrough()).optional()
@@ -606,11 +621,13 @@ export const deleteShapeOutput = {
  * re-measures (closed area vs open length). */
 export const editShapeOutput = {
   shape_id: z.string(),
-  changed: z.array(z.enum(["verts", "condition", "role", "label"])).describe("Which fields this call actually changed"),
+  changed: z.array(z.enum(["verts", "condition", "role", "label", "rise_ft", "drop_ft"])).describe("Which fields this call actually changed"),
   measure_role: z.enum(["floor_area", "deduct", "linear", "surface_area", "count"]),
   nverts: z.number().int(),
   area_sf: z.number().optional().describe("0 for linear shapes; LF × height for surface_area; absent for count"),
-  perimeter_lf: z.number().optional().describe("Length for linear/surface runs, perimeter for closed ones; absent for count"),
+  perimeter_lf: z.number().optional().describe("Length for linear/surface runs (a linear run's TOTAL incl. rise + drop), perimeter for closed ones; absent for count"),
+  plan_lf: z.number().optional().describe("Linear runs with a vertical leg: the flat trace alone (#441)"),
+  vertical_lf: z.number().optional().describe("Linear runs with a vertical leg: rise + drop (#441)"),
   count: z.number().optional().describe("count shapes only — the marker's EA (preserved across the edit)"),
   label: z.string().optional().describe("The shape's room/phase label after this call — absent when it carries none (a cleared label reports as absent, not as an empty string)"),
   agent_edits: z.number().int().describe("How many times the agent has revised this shape — separate from the human-correction tally"),
@@ -625,7 +642,7 @@ export const undoLastOutput = {
     // EVERY JournalPayload op (session.ts) belongs here — the wire validates
     // undo_last's reply against this enum, so a journal op missing from it
     // fails the undo call itself. Add the op here in the same change.
-    op: z.enum(["commit", "scale", "edit", "delete", "materials", "condition", "approval", "duplicate_condition", "split_condition", "cutout", "cutout_restore", "runcut", "rfi_create", "rfi_resolve", "rfi_delete",
+    op: z.enum(["commit", "scale", "edit", "annotation_text", "delete", "materials", "condition", "approval", "duplicate_condition", "split_condition", "cutout", "cutout_restore", "runcut", "rfi_create", "rfi_resolve", "rfi_delete",
       "proposal_open", "proposal_revise", "proposal_withdraw", "condition_proposal", "condition_proposal_withdraw", "condition_proposal_accept"]),
     tool: z.string().describe("The tool call this step came from"),
     shapes: z.number().int().describe("Shapes affected by reversing this step — 0 for a materials step (it restores a condition's supporting-materials rows, not shapes), for a condition step (it restores the waste/multiplier pair), and for an approval step (it re-seats or removes a verdict mark)"),
@@ -691,7 +708,7 @@ const reportMaterialLine = z.object({
  * is the web export — this mirror pins what a pricing consumer relies on and
  * passes the additive tail through. */
 export const exportReportOutput = {
-  schema: z.literal("opentakeoff.report.v1"),
+  schema: z.literal(REPORT_SCHEMA),
   project_name: z.string().nullable(),
   generated_with: z.string(),
   sheets: z.array(z.object({ sheet_id: z.string(), sheet: z.string(), scale_source: z.string() }).passthrough()).describe("Scale provenance per sheet — how each scale was set"),
@@ -752,6 +769,8 @@ export const editConditionOutput = {
   waste_pct: z.number().describe("The condition's waste % after this write"),
   multiplier: z.number().describe("The condition's quantity multiplier after this write"),
   height_ft: z.number().optional().describe("The condition's wall height after this write — present once set (measure_surface multiplies traced LF by it)"),
+  rise_ft: z.number().optional().describe("The condition's default rise for its linear runs after this write — present once set (#441)"),
+  drop_ft: z.number().optional().describe("The condition's default drop for its linear runs after this write — present once set (#441)"),
   roll_setup: z.object({}).passthrough().optional().describe("The condition's roll-goods setup after this write — present while opted in"),
   roll: z.object({
     condition_id: z.string(), finish_tag: z.string(), material: z.string(),
@@ -990,6 +1009,8 @@ const annotationRow = z.object({
   r: z.number().optional().describe("Bubble radius (image px)"),
   length_lf: z.number().optional().describe("Dimension only: the measured length in real feet, snapshotted at annotate time from the sheet scale"),
 });
+
+export const editAnnotationOutput = { id: z.string(), text: z.string(), note: z.string() };
 
 export const annotateOutput = {
   id: z.string(),

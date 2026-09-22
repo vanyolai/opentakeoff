@@ -106,6 +106,9 @@ display units. Merge it into `selfhosted` separately from the first milestone.
 These capabilities follow the first usable milestone and need their own design
 decisions:
 
+- replace browser-only persistence with an optional self-hosted project service
+  that saves a versioned sidecar dataset beside the source PDF; keep portable
+  import/export and define the sidecar format before adding server-only fields;
 - a larger symbol library and custom symbols;
 - authored line styles and labels;
 - snap behavior for authored plan geometry;
@@ -114,6 +117,11 @@ decisions:
   layer, such as access-control and camera cables sharing one conduit;
 - printable plan PDF output that combines the background PDF with selected
   authored layers while keeping their source records separate.
+
+The sidecar-backed project service is the next architectural milestone after
+the built-in symbol/label milestone. It comes before custom symbol libraries so
+new authored data has a durable, inspectable storage boundary instead of adding
+more browser-only state.
 
 ## Open decisions
 
