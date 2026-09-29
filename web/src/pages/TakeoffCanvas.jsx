@@ -48,6 +48,7 @@ import TakeoffsPanel, { clampPanelW, CONDITION_DND_MIME, ConditionAppearanceEdit
 import { HATCHES, PALETTE, NO_FILL, HatchPattern, HatchSwatch } from "../components/hatches.jsx";
 import { Icon } from "../brand/icons.jsx";
 import { RENDER_SCALE, MAX_GROUP, STANDARD_SCALES, parseSheetKey, compareSheetKeys, extractSheetNumber, detectScale, extractRegionText, extractTextMarks, extractDimTexts } from "../lib/sheets";
+import { joinAbuttingSpans } from "../lib/textjoin";
 import { normalizeLoadedGroups } from "../lib/sheetGroups";
 import { isStitchKey, mintStitchId, sanitizeStitches, autoButt, stitchExtent, alignMembers, seamClips, mergePoints, mergeSegs, stitchAlive, stitchLayoutSig } from "../lib/stitches";
 import { isCanvasBusy } from "../lib/canvasBusy";
@@ -93,7 +94,7 @@ import { sanitizeSheetLevels } from "../lib/sheetLevels.js";
 import { sanitizeConditionColumns, sanitizeConditionAttrs, renameColumnValue, columnLabel } from "../lib/conditionColumns.js";
 import { sanitizeShapeLabels, sanitizeShapeLabelsOnShapes, renameShapeLabel, shapeLabelValue } from "../lib/shapeLabels.js";
 import { nextHidden, revealed } from "../lib/conditionVisibility.js";
-import { buildMarkedSetPdf, downloadBytes } from "../lib/markedset.js";
+import { buildMarkedSetPdf, downloadBytes, splitLoadedSheets, skippedPdfsNote } from "../lib/markedset.js";
 import { allocateSequentialObjectLabels, defaultObjectStyle, newLabeledObjectInstance, resolveObjectStyle, sanitizeConditionObjectStyles, sanitizeCountObjects } from "../lib/objectPresentation.js";
 import { ObjectMarker } from "../components/ObjectMarker.jsx";
 import { repeatPlan } from "../lib/repeatTool.js";
@@ -165,6 +166,7 @@ import {
   MARKUP_IMG_MAX, MAX_IMAGE_MARKUP_BYTES, MARKUP_UPLOAD_MAX_BYTES, MARKUP_DECODE_MAX_AREA,
 } from "../lib/canvasConstants.js";
 import { uid, clamp, isDangerMsg, instantiateTemplate, seedConditions } from "../lib/canvasUtil.js";
+import { repairConditionMultipliers, describeMultiplierRepair } from "../lib/multiplier.js";
 // Tile-pyramid rendering (#86) — pure math in lib/tiles.ts (tested), worker
 // pool in lib/tilePool.ts, DOM/Worker orchestration glue here via one
 // long-lived compositor instance. Replaces the old single-raster base +
@@ -1609,7 +1611,12 @@ export default function TakeoffCanvas() {
     setConditionColumns(sanitizeConditionColumns(a.condition_columns));   // non-array/malformed → [] (unconditional set: snapshot load must not inherit pre-load columns)
     setShapeLabels(sanitizeShapeLabels(a.shape_labels));   // same unconditional-set rule: a snapshot load must not inherit the replaced project's label vocabulary
     setActiveLabel(null);   // active label is session-only — never carry one from the replaced project into a fresh/loaded one
-    const conds = sanitizeConditionObjectStyles(sanitizeConditionAttrs(a.conditions || []));   // attrs + additive object presentation/layer seam share the load gate
+    // multipliers get the same load-time trust pass (#455): a project saved before
+    // import refused bad values can still carry a 0 / negative / string — repair it
+    // to what it already billed at and say so, rather than let NaN reach the report
+    const { conditions: multiplierSafeConds, repaired: multRepaired } = repairConditionMultipliers(sanitizeConditionAttrs(a.conditions || []));   // strips corrupt attrs values so every reader can trust them (the client_info precedent)
+    const conds = sanitizeConditionObjectStyles(multiplierSafeConds);   // additive object presentation/layer seam shares the same load gate
+    if (multRepaired.length) setCommitMsg(describeMultiplierRepair(multRepaired));
     if (conds.length) { setConditions(conds); setActiveCond(conds[0].id); }
     else { const seeded = seedConditions(templatesRef.current); setConditions(seeded); setActiveCond(seeded[0].id); }   // library templates first, flooring defaults as fallback
     // palette holds condition ids — de-dupe (a hand-edited/older payload could
@@ -4485,12 +4492,23 @@ export default function TakeoffCanvas() {
           const vs = Math.hypot(vt[0], vt[1]) || 2;
           const w = (it.width || 0) * vs;
           const h = (it.height || 0) * vs || Math.hypot(t[2], t[3]);
-          spans.push({ str, x0: t[4], y0: t[5] - h, x1: t[4] + w, y1: t[5] });
+          // the box is the hull of the run's four corners along its own
+          // direction, so a quarter-turn tag gets its true tall-narrow box
+          // (and can rejoin below); unrotated text reduces to [y − h, y]
+          const dn = Math.hypot(t[0], t[1]) || 1, un = Math.hypot(t[2], t[3]) || 1;
+          const dx = t[0] / dn, dy = t[1] / dn, ux = t[2] / un, uy = t[3] / un;
+          const xs = [t[4], t[4] + w * dx, t[4] + h * ux, t[4] + w * dx + h * ux];
+          const ys = [t[5], t[5] + w * dy, t[5] + h * uy, t[5] + w * dy + h * uy];
+          const rot = ((Math.round((Math.atan2(dy, dx) * 180) / Math.PI) % 360) + 360) % 360;
+          spans.push({ str, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), ...(rot ? { rot } : {}) });
         }
       }
     } catch { /* no text layer — labels simply stay absent */ }
-    textSpansRef.current.set(key, spans);
-    return spans;
+    // runs pdf.js split mid-tag ("WB" + "-" + "01") rejoin — the MCP textSpans
+    // does the same, so the Symbol tool labels exactly what the agent reads
+    const joined = joinAbuttingSpans(spans);
+    textSpansRef.current.set(key, joined);
+    return joined;
   }
   async function runSymbolSweep(a, b) {
     const tp = panelAt(a[0]);
@@ -5334,7 +5352,14 @@ export default function TakeoffCanvas() {
           stitch: { members: st.members.map((m) => ({ key: m.key, ...parseSheetKey(m.key), label: tabLabel(m.key), dx: m.dx, dy: m.dy })) },
         };
       }).filter(Boolean);
-      const sheetMeta = [...plainMeta, ...stitchMeta];
+      // A PDF closed out of the plan set keeps its takeoffs, but its bytes are
+      // gone — export what's loaded and say what was left out (#462).
+      const { kept: sheetMeta, missingFiles } = splitLoadedSheets([...plainMeta, ...stitchMeta], sheets.map((s) => s.name));
+      const skipped = skippedPdfsNote(missingFiles);
+      if (!sheetMeta.length && missingFiles.length && !rfis.length) {
+        setCommitMsg(`Nothing to export — ${skipped}`);
+        return;
+      }
       // (source-caption label rides on each capture as m.src_label, frozen at
       // capture time — markedset reads it directly, no per-export resolution.)
       // branding mode decides the cover identity + wordmark + parent credit;
@@ -5347,7 +5372,7 @@ export default function TakeoffCanvas() {
         loadPdfData: (file) => store.loadPdfData(file),
       });
       downloadBytes(filename, bytes);
-      setCommitMsg(`Marked set downloaded — ${filename}`);
+      setCommitMsg(`Marked set downloaded — ${filename}${skipped ? ` — ${skipped}` : ""}`);
     } catch (e) {
       setCommitMsg(`Marked set failed: ${e.message || e}`);
     }
