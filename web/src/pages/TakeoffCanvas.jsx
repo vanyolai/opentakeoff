@@ -8633,32 +8633,32 @@ export default function TakeoffCanvas() {
            faces). Lives in the canvas row so docked panels + canvas reflow
            beside it; survives focus mode — it IS the tool access. */}
        {view === "canvas" && (
-       <nav data-tool-rail data-dock-side={workspaceLayout ? workspaceArrangement.tools : undefined} role="toolbar" aria-label="Tools" style={{ order: workspaceLayout ? workspaceArrangement.tools === "right" ? 30 : -30 : undefined, width: "var(--rail-w)", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--sp-1)", paddingTop: "var(--sp-2)", borderRight: "1px solid var(--ink-faint)", background: "var(--paper-bright)", overflowY: "auto", overflowX: "visible" }}>
-         {workspaceDockHandle("tools", "Tools")}
-         {railLabel("SEL")}
-         {railTile("select", "select", "Select — pick a takeoff, drag points; drag open canvas to pan", "V")}
-         {railLabel("MEAS")}
-         {MEASURE_TOOLS.filter((t) => t.id !== "oneclick" || oneClickEnabled()).map((t) => railTile(t.id, t.icon, t.label, t.shortcut))}
-         {railLabel("CUT")}
-         {CUT_TOOLS.map((t) => railTile(t.id, t.icon, t.label, t.shortcut, null, { tint: "var(--c-danger)" }))}
-         {railLabel("MARK")}
+       <nav data-tool-rail data-dock-side={workspaceLayout ? workspaceArrangement.tools : undefined} role="toolbar" aria-label={t("tools.toolbar")} style={{ order: workspaceLayout ? workspaceArrangement.tools === "right" ? 30 : -30 : undefined, width: "var(--rail-w)", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--sp-1)", paddingTop: "var(--sp-2)", borderRight: "1px solid var(--ink-faint)", background: "var(--paper-bright)", overflowY: "auto", overflowX: "visible" }}>
+         {workspaceDockHandle("tools", t("tools.toolbar"))}
+         {railLabel(t("tools.groupSelect"))}
+         {railTile("select", "select", t("tools.selectTitle"), "V")}
+         {railLabel(t("tools.groupMeasure"))}
+         {MEASURE_TOOLS.filter((toolDef) => toolDef.id !== "oneclick" || oneClickEnabled()).map((toolDef) => railTile(toolDef.id, toolDef.icon, t(`tools.${toolDef.id}`, { defaultValue: toolDef.label }), toolDef.shortcut))}
+         {railLabel(t("tools.groupCut"))}
+         {CUT_TOOLS.map((toolDef) => railTile(toolDef.id, toolDef.icon, t(`tools.${toolDef.id === "deduct-rect" ? "deductRect" : toolDef.id}`, { defaultValue: toolDef.label }), toolDef.shortcut, null, { tint: "var(--c-danger)" }))}
+         {railLabel(t("tools.groupMarkup"))}
          <span ref={(el) => { if (el) markTileTopRef.current = el.getBoundingClientRect().top; }} style={{ position: "relative", display: "inline-flex" }}>
            <ToolMenu
-             title="Create annotation — cloud, callout, text, highlight, or dimension"
+             title={t("tools.markupMenuTitle")}
              active={MARKUP_IDS.includes(tool)}
              onOpenChange={onMenuDepth}
              flyout="right"
              face={<Icon name="markup" size={17} />}
              items={[
-               { section: "Markup — notes on the plan, never measured" },
-               ...MARKUP_TOOLS.map((t) => ({ id: t.id, icon: t.icon, label: t.label, shortcut: t.shortcut, active: tool === t.id, onSelect: () => { setTool(t.id); setMarkupDraft(null); } })),
+               { section: t("tools.markupSection") },
+               ...MARKUP_TOOLS.map((toolDef) => ({ id: toolDef.id, icon: toolDef.icon, label: t(`tools.${toolDef.id}`, { defaultValue: toolDef.label }), shortcut: toolDef.shortcut, active: tool === toolDef.id, onSelect: () => { setTool(toolDef.id); setMarkupDraft(null); } })),
              ]}
            />
            {/* highlighter style popover — fixed beside the rail while armed
                (fixed, not absolute: the rail's scroll box would clip it) */}
            {tool === "highlighter" && (
              <div style={{ position: "fixed", left: "calc(var(--rail-w) + 8px)", top: markTileTopRef.current || 200, zIndex: Z.popover, background: "var(--paper-bright)", border: "1px solid var(--ink-faint)", borderRadius: 0, boxShadow: "var(--shadow-pop)", padding: "8px 10px", display: "flex", flexDirection: "column", gap: 7 }}>
-               <div style={{ display: "flex", gap: 6 }} title="Ink">
+               <div style={{ display: "flex", gap: 6 }} title={t("tools.ink")}>
                  {HL_INKS.map((c) => (
                    <button key={c} onClick={() => setHlStyle((st) => ({ ...st, color: c }))}
                      style={{ width: 16, height: 16, padding: 0, background: c, border: hlStyle.color === c ? "2px solid var(--ink)" : "1px solid var(--ink-faint)", cursor: "pointer" }} />
@@ -8666,12 +8666,12 @@ export default function TakeoffCanvas() {
                </div>
                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                  {HL_SIZES.map(([lbl, px]) => (
-                   <button key={lbl} onClick={() => setHlStyle((st) => ({ ...st, size: px }))} title={`${lbl === "F" ? "Fine" : lbl === "M" ? "Medium" : "Broad"} tip`}
+                   <button key={lbl} onClick={() => setHlStyle((st) => ({ ...st, size: px }))} title={t(`tools.tip${lbl === "F" ? "Fine" : lbl === "M" ? "Medium" : "Broad"}`)}
                      style={{ width: 22, height: 20, padding: 0, fontFamily: "var(--f-mono)", fontSize: 10, cursor: "pointer", border: hlStyle.size === px ? "1px solid var(--ink)" : "1px solid var(--ink-faint)", background: hlStyle.size === px ? "var(--ink)" : "transparent", color: hlStyle.size === px ? "var(--paper-bright)" : "var(--ink)" }}>{lbl}</button>
                  ))}
                  <span style={{ width: 1, alignSelf: "stretch", background: "var(--ink-faint)" }} />
                  {[["chisel", "M4 16 L14 6 L18 10 L8 20 Z"], ["round", "M5 17 Q12 3 19 13"]].map(([tip, d]) => (
-                   <button key={tip} onClick={() => setHlStyle((st) => ({ ...st, tip }))} title={`${tip} tip`}
+                   <button key={tip} onClick={() => setHlStyle((st) => ({ ...st, tip }))} title={t(`tools.tip${tip === "chisel" ? "Chisel" : "Round"}`)}
                      style={{ width: 24, height: 20, padding: 1, cursor: "pointer", border: hlStyle.tip === tip ? "1px solid var(--ink)" : "1px solid var(--ink-faint)", background: "transparent" }}>
                      <svg viewBox="0 0 24 24" width="18" height="14">{tip === "chisel"
                        ? <path d={d} fill="currentColor" stroke="none" />
@@ -8685,10 +8685,10 @@ export default function TakeoffCanvas() {
          {/* Approval stamp — ink over pencil. Human-only by design: this tile
              is the ONLY way an estimator seal is minted (no MCP tool, no agent
              path), so the mark means a person looked. */}
-         {railTile("approve", "approve", "Approval stamp — the estimator's ink. Click a committed takeoff to approve it, or empty plan to approve the sheet; click a seal to lift it. ⌘Z undoes. Human-only.", null,
+         {railTile("approve", "approve", t("tools.approveTitle"), null,
            () => setTool((t) => (t === "approve" ? "select" : "approve")), { tint: tool === "approve" ? "var(--c-positive)" : undefined, armed: tool === "approve" })}
-         {railLabel("CAL")}
-         {railTile("calibrate", "calibrate", "Calibrate — click two points of a known dimension", null)}
+         {railLabel(t("tools.groupCalibrate"))}
+         {railTile("calibrate", "calibrate", t("tools.calibrateTitle"), null)}
        </nav>
        )}
        {/* docked LEFT panel — one of Markups/Stamps/RFIs at a time. Reflows the
