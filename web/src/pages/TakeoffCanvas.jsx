@@ -16,6 +16,7 @@ import ReferencePins, { PinButton } from "../components/ReferencePins.jsx";
 // pans. Geometry math reads tfRef (always current), so drawing stays accurate.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { keyText } from "../lib/keys.ts";
 import { nextHatchId } from "../lib/takeoffConstants.ts";
 import { buildTakeoffDocument, sheetEntry } from "../lib/takeoffDocument.js";
@@ -286,6 +287,7 @@ const TOOL_VERB = {
 // live in components/TakeoffsPanel.jsx — the panel is their only surface now.
 
 export default function TakeoffCanvas() {
+  const { t } = useTranslation();
   // Client-only: a single local workspace in this browser (no project id, no backend).
   const [sheets, setSheets] = useState([]);
   const [active, setActive] = useState("");      // active source PDF file name
@@ -8110,21 +8112,21 @@ export default function TakeoffCanvas() {
   }));
   const workspaceDockHandle = (dock, label) => workspaceLayout && <DockHandle dock={dock} label={label} locked={workspaceArrangement.locked} onDrag={setWorkspaceDragging} onMove={workspacePrefs.move} />;
   const workspaceActions = [
-    ...MEASURE_TOOLS.filter((t) => t.id !== "oneclick" || oneClickEnabled()).concat(CUT_TOOLS).map((t) => ({ id: `tool-${t.id}`, label: t.label, shortcut: t.shortcut, group: "Measuring tools", run: () => { setView("canvas"); setTool(t.id); } })),
-    { id: "select", label: "Select and edit a measurement", group: "Tools", shortcut: "V", run: () => setTool("select") },
-    { id: "zone", label: "Zone check — what's inside a traced region", group: "Tools", run: () => { setView("canvas"); setTool("zone"); } },
-    { id: "undo", label: "Undo", group: "Edit", shortcut: "⌘Z", run: () => poly.length ? dropLastPoint() : undoShapeCommand() },
-    { id: "redo", label: "Redo", group: "Edit", shortcut: "⇧⌘Z", run: redoShapeCommand },
-    { id: "finish", label: "Finish shape", group: "Edit", shortcut: "↵", disabled: !finishOk, run: finishShape },
+    ...MEASURE_TOOLS.filter((toolDef) => toolDef.id !== "oneclick" || oneClickEnabled()).concat(CUT_TOOLS).map((toolDef) => ({ id: `tool-${toolDef.id}`, label: t(`tools.${toolDef.id === "deduct-rect" ? "deductRect" : toolDef.id}`, { defaultValue: toolDef.label }), shortcut: toolDef.shortcut, group: t("canvas.edit"), run: () => { setView("canvas"); setTool(toolDef.id); } })),
+    { id: "select", label: t("tools.select"), group: t("canvas.edit"), shortcut: "V", run: () => setTool("select") },
+    { id: "zone", label: t("tools.zone"), group: t("canvas.aids"), run: () => { setView("canvas"); setTool("zone"); } },
+    { id: "undo", label: t("canvas.undo"), group: t("canvas.edit"), shortcut: "⌘Z", run: () => poly.length ? dropLastPoint() : undoShapeCommand() },
+    { id: "redo", label: t("canvas.redo"), group: t("canvas.edit"), shortcut: "⇧⌘Z", run: redoShapeCommand },
+    { id: "finish", label: t("canvas.finish", { count: poly.length }), group: t("canvas.edit"), shortcut: "↵", disabled: !finishOk, run: finishShape },
     { id: "copy", label: "Copy selected", group: "Edit", shortcut: "⌘C", disabled: !selectedId, run: copySelected },
     { id: "paste", label: "Paste", group: "Edit", shortcut: "⌘V", disabled: !clipRef.current.length, run: () => pasteClipboard() },
-    { id: "report", label: "Open report", group: "Workspace", run: () => setShowReport(true) },
-    { id: "work", label: "Open work and review", group: "Workspace", run: () => setAgentOpen(true) },
+    { id: "report", label: t("canvas.report"), group: t("workspace.compact"), run: () => setShowReport(true) },
+    { id: "work", label: t("canvas.work"), group: t("workspace.compact"), run: () => setAgentOpen(true) },
     { id: "layout", label: "Arrange and save your layout", group: "Workspace", run: () => setWorkspaceLayoutOpen(true) },
     { id: "fit", label: "Fit sheet to view", group: "View", disabled: !stage.w, run: () => fitToView(stage.w, stage.h) },
     { id: "focus", label: "Focus mode", group: "View", shortcut: "F", run: toggleFocusMode },
     { id: "theme", label: workspaceArrangement.look === "light" ? "Backlit graphite" : "Studio light", group: "Appearance", run: () => workspacePrefs.update({ look: workspaceArrangement.look === "light" ? "graphite" : "light" }) },
-    { id: "addcondition", label: "Add condition", group: "Conditions", run: addCondition },
+    { id: "addcondition", label: t("canvas.addCondition"), group: t("canvas.conditions"), run: addCondition },
     ...scaleItems.filter((item) => item.onSelect).map((item) => ({ ...item, id: `scale-${item.id}`, group: "Scale", run: item.onSelect })),
     ...sheetMenuItems.filter((item) => item.onSelect).map((item) => ({ ...item, id: `file-${item.id}`, group: "Plans and files", run: item.onSelect })),
     ...workspaceSheets.map((sheet) => ({ id: `sheet-${sheet.key}`, label: sheet.label, group: sheet.file, run: () => openSheets([sheet.key], false) })),
@@ -8200,7 +8202,7 @@ export default function TakeoffCanvas() {
         onReport={() => setShowReport(true)} onFocus={toggleFocusMode} onClassic={() => workspacePrefs.setEnabled(false)}
         onControls={() => setWorkspaceControlsOpen((v) => !v)} controlsOpen={workspaceControlsOpen} onSearch={() => setWorkspaceSearchOpen(true)}
         pinControl={pinButton}
-        panelTools={<div className="calm-panel-tools" role="group" aria-label="Quantity and review tools">
+        panelTools={<div className="calm-panel-tools" role="group" aria-label={t("canvas.quantityReviewTools")}>
           {panelBtn(() => setLeftTab((t) => (t === "markup" ? null : "markup")), "document", "Markup list — existing clouds, callouts, and notes", leftTab === "markup", markupCount)}
           {panelBtn(() => setLeftTab((t) => (t === "stamp" ? null : "stamp")), "stamp", "Stamps — reusable annotations dropped click-to-place", leftTab === "stamp", stampLib.stamps.length)}
           {panelBtn(() => setLeftTab((t) => (t === "rfi" ? null : "rfi")), "rfi", "RFI register — raise, track, and export Requests For Information", leftTab === "rfi", rfis.length)}
@@ -8208,19 +8210,19 @@ export default function TakeoffCanvas() {
           {layerEntries.length > 0 && panelBtn(() => setLayersOpen((o) => !o), "layers", "PDF layers — drawing layers", layersOpen, layerEntries.reduce((n, e) => n + e.layers.length, 0))}
           {panelBtn(() => setShowRevisions(true), "revisions", "Revisions — save the takeoff at each bid revision, compare what moved", showRevisions)}
         </div>}
-        layoutMenu={<button type="button" onClick={() => setWorkspaceLayoutOpen(true)} title="Arrange panels, lock positions, and save layouts"><Icon name="sliders" size={16} />Layout</button>}
-        fileMenu={<><ToolMenu title="Files and workspace" face={<span>File</span>} onOpenChange={onMenuDepth} items={sheetMenuItems} /><PresenceChip bridge={store.syncBridge} /><AccountChip note={cloudMode ? "Synced to Google Drive" : "Local workspace"} onOpenChange={onMenuDepth} /></>}
-        conditionControl={<><label className="calm-condition-label" htmlFor="workspace-condition">Condition</label><select id="workspace-condition" value={activeCond || ""} onChange={(e) => activateCondition(e.target.value)} title={tool === "select" && selectedId ? "Reassign selected measurement" : "Condition for the next measurement"}>
-          {!conditions.length && <option value="">No conditions</option>}{conditions.map((c) => <option key={c.id} value={c.id}>{c.finish_tag}</option>)}</select>
-          <button type="button" onClick={addCondition} title="Add condition" aria-label="Add condition"><Icon name="plus" size={14} /></button>
-          <button type="button" onClick={() => setWorkspaceDetailsOpen((v) => !v)} aria-expanded={workspaceDetailsOpen} disabled={!aCond}>Properties</button></>}
-        history={<><button type="button" onClick={() => poly.length ? dropLastPoint() : undoShapeCommand()} title="Undo (⌘Z)" aria-label="Undo"><Icon name="undo" size={16} /></button><button type="button" onClick={redoShapeCommand} title="Redo (⇧⌘Z)" aria-label="Redo"><span style={{ display: "flex", transform: "scaleX(-1)" }}><Icon name="undo" size={16} /></span></button></>}
-        aids={<><button type="button" aria-pressed={tool === "zone"} onClick={() => setTool((t) => (t === "zone" ? "select" : "zone"))} title="Zone check — trace a region (an apartment, a wing) to read every condition's quantities inside it, materials included. Nothing is saved; the outline clears when you leave the tool."><Icon name="zone" size={15} />Zone</button><button type="button" aria-pressed={snapOn} onClick={() => setSnapOn((v) => !v)} title="Snap to plan lines/corners (beta)"><Icon name="snap" size={15} />Snap</button><button type="button" aria-pressed={angleOn} onClick={() => setAngleOn((v) => !v)} title="45°/90° angle guides"><Icon name="angle" size={15} />45°</button>{draftMenu}<span className="calm-separator" />{annotations.control}</>}
-        action={finishOk && <button type="button" onClick={finishShape}>Finish ({poly.length})</button>}
-        scaleMenu={<><button type="button" onClick={() => setUnits((u) => u === "metric" ? "imperial" : "metric")} title="Switch display units">{units === "metric" ? "m" : "ft"}</button><ToolMenu title={scaleTitle} onOpenChange={onScaleMenuDepth} face={<span>{scaleFace}</span>} faceStyle={{ fontFamily: "var(--f-mono)", fontSize: 11.5, ...scaleFaceStyle }} menuStyle={{ minWidth: 250 }} items={scaleItems} /></>}
+        layoutMenu={<button type="button" onClick={() => setWorkspaceLayoutOpen(true)} title={t("canvas.layoutTitle")}><Icon name="sliders" size={16} />{t("canvas.layout")}</button>}
+        fileMenu={<><ToolMenu title={t("canvas.filesWorkspace")} face={<span>{t("canvas.file")}</span>} onOpenChange={onMenuDepth} items={sheetMenuItems} /><PresenceChip bridge={store.syncBridge} /><AccountChip note={cloudMode ? t("canvas.syncedGoogle") : t("canvas.localWorkspace")} onOpenChange={onMenuDepth} /></>}
+        conditionControl={<><label className="calm-condition-label" htmlFor="workspace-condition">{t("canvas.condition")}</label><select id="workspace-condition" value={activeCond || ""} onChange={(e) => activateCondition(e.target.value)} title={tool === "select" && selectedId ? t("canvas.reassignMeasurement") : t("canvas.conditionNext")}>
+          {!conditions.length && <option value="">{t("canvas.noConditions")}</option>}{conditions.map((c) => <option key={c.id} value={c.id}>{c.finish_tag}</option>)}</select>
+          <button type="button" onClick={addCondition} title={t("canvas.addCondition")} aria-label={t("canvas.addCondition")}><Icon name="plus" size={14} /></button>
+          <button type="button" onClick={() => setWorkspaceDetailsOpen((v) => !v)} aria-expanded={workspaceDetailsOpen} disabled={!aCond}>{t("canvas.properties")}</button></>}
+        history={<><button type="button" onClick={() => poly.length ? dropLastPoint() : undoShapeCommand()} title={`${t("canvas.undo")} (⌘Z)`} aria-label={t("canvas.undo")}><Icon name="undo" size={16} /></button><button type="button" onClick={redoShapeCommand} title={`${t("canvas.redo")} (⇧⌘Z)`} aria-label={t("canvas.redo")}><span style={{ display: "flex", transform: "scaleX(-1)" }}><Icon name="undo" size={16} /></span></button></>}
+        aids={<><button type="button" aria-pressed={tool === "zone"} onClick={() => setTool((toolId) => (toolId === "zone" ? "select" : "zone"))}><Icon name="zone" size={15} />{t("canvas.zone")}</button><button type="button" aria-pressed={snapOn} onClick={() => setSnapOn((v) => !v)} title={t("canvas.snapTitle")}><Icon name="snap" size={15} />{t("canvas.snap")}</button><button type="button" aria-pressed={angleOn} onClick={() => setAngleOn((v) => !v)} title={t("canvas.angleTitle")}><Icon name="angle" size={15} />45°</button>{draftMenu}<span className="calm-separator" />{annotations.control}</>}
+        action={finishOk && <button type="button" onClick={finishShape}>{t("canvas.finish", { count: poly.length })}</button>}
+        scaleMenu={<><button type="button" onClick={() => setUnits((u) => u === "metric" ? "imperial" : "metric")} title={t("canvas.switchUnits")}>{units === "metric" ? "m" : "ft"}</button><ToolMenu title={scaleTitle} onOpenChange={onScaleMenuDepth} face={<span>{scaleFace}</span>} faceStyle={{ fontFamily: "var(--f-mono)", fontSize: 11.5, ...scaleFaceStyle }} menuStyle={{ minWidth: 250 }} items={scaleItems} /></>}
       />}
-      {workspaceLayout && !workspaceArrangement.readout && selShape?.measure_role === "surface_area" && <div className="calm-property-editor"><label>Selected wall height <input aria-label="Selected wall height" type="number" min="0" step={heightStep(units)} value={shapeHDraft ?? dimInputStr(selShape.height_ft, units, "height")} onChange={(e) => { setShapeHDraft(e.target.value); setShapeHeight(e.target.value); }} onBlur={() => { if (shapeHDraft != null) setShapeHeight(shapeHDraft); setShapeHDraft(null); }} /></label><span>{heightUnit(units)} → {fa(selShape.computed?.area_sf || 0)}</span><button type="button" onClick={clearShapeHeight}>Use condition height</button></div>}
-      {!focusMode && workspaceLayout && workspaceDetailsOpen && aCond && <div className="calm-property-editor"><strong>{aCond.finish_tag}</strong><ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} layout="row" units={units} /><button type="button" onClick={() => setWorkspaceDetailsOpen(false)}>Close properties</button></div>}
+      {workspaceLayout && !workspaceArrangement.readout && selShape?.measure_role === "surface_area" && <div className="calm-property-editor"><label>{t("canvas.selectedWallHeight")} <input aria-label={t("canvas.selectedWallHeight")} type="number" min="0" step={heightStep(units)} value={shapeHDraft ?? dimInputStr(selShape.height_ft, units, "height")} onChange={(e) => { setShapeHDraft(e.target.value); setShapeHeight(e.target.value); }} onBlur={() => { if (shapeHDraft != null) setShapeHeight(shapeHDraft); setShapeHDraft(null); }} /></label><span>{heightUnit(units)} → {fa(selShape.computed?.area_sf || 0)}</span><button type="button" onClick={clearShapeHeight}>{t("canvas.useConditionHeight")}</button></div>}
+      {!focusMode && workspaceLayout && workspaceDetailsOpen && aCond && <div className="calm-property-editor"><strong>{aCond.finish_tag}</strong><ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} layout="row" units={units} /><button type="button" onClick={() => setWorkspaceDetailsOpen(false)}>{t("canvas.closeProperties")}</button></div>}
       {workspaceLayout && <><WorkspaceCommandMenu open={workspaceSearchOpen} onClose={() => setWorkspaceSearchOpen(false)} actions={workspaceActions} onOpenChange={onMenuDepth} /><WorkspaceLayoutDialog open={workspaceLayoutOpen} onClose={() => setWorkspaceLayoutOpen(false)} prefs={workspacePrefs} onOpenChange={onMenuDepth} /></>}
       {!focusMode && (!workspaceLayout || workspaceControlsOpen) && (
       <div data-topbar style={{ display: "flex", gap: 7, alignItems: "center", padding: "0 14px 6px", borderBottom: "1px solid var(--ink-faint)", background: "var(--paper-bright)", whiteSpace: "nowrap" }}>
@@ -8232,33 +8234,33 @@ export default function TakeoffCanvas() {
             keeps the cluster captions (top:-13) inside the scroll box. */}
         <div data-topbar-scroll style={{ display: "flex", gap: 7, alignItems: "center", flex: "1 1 0", minWidth: 0, padding: "16px 0 0", overflowX: "auto", overflowY: "hidden", scrollbarWidth: "thin", overscrollBehaviorX: "contain" }}>
         <strong style={{ fontFamily: "var(--f-display)", fontSize: 15, color: "var(--ink)", letterSpacing: "-0.02em" }}>open<span style={{ fontStyle: "italic", color: "var(--cobalt)" }}>takeoff</span></strong>
-        <button type="button" onClick={() => fileInputRef.current?.click()} title="Open plans — PDF, image, or a .zip plan set (or just drag them onto the canvas)"
+        <button type="button" onClick={() => fileInputRef.current?.click()} title={t("canvas.openPlans")}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", border: "1px solid var(--ink)", background: "var(--ink)", color: "var(--paper-bright)", cursor: "pointer", fontWeight: 600, fontSize: 12.5, lineHeight: 1 }}>
-          <Icon name="plus" size={14} />Open</button>
+          <Icon name="plus" size={14} />{t("common.open")}</button>
         <button type="button" onClick={() => setView("gallery")}
           title={`Plan set — the visual gallery; open one or several sheets (G)${sheetGroup.length ? ` · ${sheetGroup.length} side-by-side now` : ""}`}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", border: `1px solid ${sheetGroup.length ? "var(--cobalt)" : "var(--ink-faint)"}`, background: sheetGroup.length ? "var(--cobalt)" : "transparent", color: sheetGroup.length ? "var(--paper-bright)" : "var(--ink)", cursor: "pointer", fontWeight: 600, fontSize: 12.5, lineHeight: 1 }}>
-          <Icon name="sheets" size={15} />Sheets
+          <Icon name="sheets" size={15} />{t("canvas.sheets")}
         </button>
         {pinButton}
         {sheets.length > 0 && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={!!sheetGroup.length || page <= 1} title="Previous sheet"
+            <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={!!sheetGroup.length || page <= 1} title={t("canvas.previousSheet")}
               style={{ padding: "5px 8px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink)", cursor: "pointer", opacity: (!!sheetGroup.length || page <= 1) ? 0.4 : 1 }}><Icon name="chevronLeft" size={12} /></button>
             <ToolMenu
-              title="Sheet — the sheets in this set, files, grouping, and the gallery"
+              title={t("canvas.sheetMenu")}
               onOpenChange={onMenuDepth}
               face={<span style={{ display: "inline-block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sheetChipLabel}</span>}
               faceStyle={{ fontFamily: "var(--f-mono)", fontSize: 12, fontWeight: 400, padding: "6px 8px" }}
               menuStyle={{ minWidth: 260, maxHeight: "min(480px, 60vh)", overflowY: "auto" }}
               items={sheetMenuItems}
             />
-            <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={!!sheetGroup.length || page >= pageCount} title="Next sheet"
+            <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={!!sheetGroup.length || page >= pageCount} title={t("canvas.nextSheet")}
               style={{ padding: "5px 8px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink)", cursor: "pointer", opacity: (!!sheetGroup.length || page >= pageCount) ? 0.4 : 1 }}><Icon name="chevronRight" size={12} /></button>
           </span>
         )}
         {vRule}
-        {cluster("Edit", <>
+        {cluster(t("canvas.edit"), <>
           <ToolMenu
             title="Edit takeoffs"
             onOpenChange={onMenuDepth}
@@ -8282,7 +8284,7 @@ export default function TakeoffCanvas() {
           />
         </>)}
         {vRule}
-        {cluster("Aids", <>
+        {cluster(t("canvas.aids"), <>
           {panels.length === 1 && isStitchKey(panels[0].key) && (
             <button onClick={() => setTool((t) => (t === "stitch-align" ? "select" : "stitch-align"))}
               title="Align the match line — click a point near the joint, then the SAME point where the other sheet draws it; that sheet slides so the two coincide. Do this before tracing (a stitch with takeoffs on it won't re-align)."
@@ -8309,7 +8311,7 @@ export default function TakeoffCanvas() {
             dropdown. Style and Outline came up from the ⋯ menu, Straight/Curve
             over from the readout (2026-09-12): a convention you set before
             tracing belongs beside the aids, one click from the sheet. */}
-        {cluster("Draft", draftMenu)}
+        {cluster(t("canvas.draft"), draftMenu)}
         {/* The caption always shows the ACTIVE label (+ the cobalt highlight keyed
             on it) so what a new trace will get is never hidden — even in Select
             mode, where the dropdown VALUE instead shows the selected shape's label
@@ -8401,37 +8403,37 @@ export default function TakeoffCanvas() {
           </>
         )}
         <button type="button" ref={workspaceLayout ? undefined : workButtonRef} aria-expanded={agentOpen} onClick={() => setAgentOpen((v) => !v)}
-          title="Work and review — measurements, provenance, and agent proposals"
+          title={t("canvas.work")}
           style={{ minHeight: "var(--ctl-m)", padding: "var(--sp-1) var(--sp-3)", border: "1px solid var(--cobalt)", background: agentOpen ? "var(--cobalt)" : "transparent", color: agentOpen ? "var(--accent-contrast)" : "var(--cobalt)", cursor: "pointer", fontSize: "var(--fs-s)", fontWeight: 600 }}>
-          Work{agentRunning ? " · Working" : shapes.some((s) => s.origin?.reviewed === false) ? ` · ${shapes.filter((s) => s.origin?.reviewed === false).length}` : ""}
+          {t("canvas.work")}{agentRunning ? ` · ${t("canvas.working")}` : shapes.some((s) => s.origin?.reviewed === false) ? ` · ${shapes.filter((s) => s.origin?.reviewed === false).length}` : ""}
         </button>
-        <button onClick={() => setShowReport(true)} disabled={!conditions.length} title="Open the takeoff report — per-condition breakdown with waste, plus CSV / JSON export."
-          style={{ padding: "8px 14px", border: "none", background: conditions.length ? "var(--ink)" : "var(--text-faint)", color: "var(--paper-bright)", cursor: conditions.length ? "pointer" : "default", fontWeight: 700, fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>Report</button>
+        <button onClick={() => setShowReport(true)} disabled={!conditions.length} title={t("canvas.reportTitle")}
+          style={{ padding: "8px 14px", border: "none", background: conditions.length ? "var(--ink)" : "var(--text-faint)", color: "var(--paper-bright)", cursor: conditions.length ? "pointer" : "default", fontWeight: 700, fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase" }}>{t("canvas.report")}</button>
         {/* ⋯ overflow — rarely-used project controls, so the row never wraps
             and nothing shifts position mid-work (issue #61's contract). */}
         <ToolMenu
-          title="More — guide, appearance, schedule import, project moves"
+          title={t("canvas.moreTitle")}
           onOpenChange={onMenuDepth}
           face={<span style={{ fontWeight: 700, letterSpacing: "0.08em" }}>⋯</span>}
           items={[
-            { id: "workspace-preview", label: workspaceLayout ? "Classic layout" : "Compact workspace", onSelect: () => workspacePrefs.setEnabled(!workspaceLayout) },
-            { id: "guide", label: "How OpenTakeoff works", shortcut: "?", onSelect: () => setGuideOpen(true) },
-            { id: "theme", label: theme === "dark" ? "Light chrome" : "Dark chrome", onSelect: toggleTheme },
+            { id: "workspace-preview", label: t(workspaceLayout ? "canvas.classicLayout" : "canvas.compactWorkspace"), onSelect: () => workspacePrefs.setEnabled(!workspaceLayout) },
+            { id: "guide", label: t("canvas.guide"), shortcut: "?", onSelect: () => setGuideOpen(true) },
+            { id: "theme", label: t(theme === "dark" ? "canvas.lightChrome" : "canvas.darkChrome"), onSelect: toggleTheme },
             "divider",
-            { id: "schedule", icon: "rectTool", label: "Import from schedule", active: tool === "schedule", onSelect: () => { setScheduleAnchor(null); setTool((t) => (t === "schedule" ? "select" : "schedule")); } },
+            { id: "schedule", icon: "rectTool", label: t("canvas.importSchedule"), active: tool === "schedule", onSelect: () => { setScheduleAnchor(null); setTool((toolId) => (toolId === "schedule" ? "select" : "schedule")); } },
             ...(cloudMode ? [
               "divider",
-              { id: "closeproj", label: "Close project", onSelect: closeProject },
-              ...(browseProjects ? [{ id: "projects", label: "Team projects", onSelect: browseProjects }] : []),
+              { id: "closeproj", label: t("canvas.closeProject"), onSelect: closeProject },
+              ...(browseProjects ? [{ id: "projects", label: t("canvas.teamProjects"), onSelect: browseProjects }] : []),
             ] : []),
             ...(!cloudMode && googleUser && isGoogleConfigured() && projectHomeFolderId() ? [
               "divider",
-              { id: "browse", label: "Browse team projects", onSelect: () => navigate("/projects") },
+              { id: "browse", label: t("canvas.browseProjects"), onSelect: () => navigate("/projects") },
             ] : []),
           ]}
         />
         <PresenceChip bridge={store.syncBridge} />
-        <AccountChip note={cloudMode ? "Synced to Google Drive" : "Local workspace"} onOpenChange={onMenuDepth} />
+        <AccountChip note={t(cloudMode ? "canvas.syncedGoogle" : "canvas.localWorkspace")} onOpenChange={onMenuDepth} />
         </span>
       </div>
       )}
@@ -8455,10 +8457,10 @@ export default function TakeoffCanvas() {
           onDrop={(e) => { if (!e.dataTransfer.types.includes(CONDITION_DND_MIME)) return; e.preventDefault(); e.stopPropagation(); const id = e.dataTransfer.getData(CONDITION_DND_MIME); if (id) pinToPalette(id); }}
           style={{ padding: "5px 14px", borderBottom: "1px solid var(--ink-faint)", background: "var(--paper-bright)" }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <span title="Quick-access conditions — drag a condition here (or use a row's pushpin) to pin it, up to 9. Press 1–9 to activate by this order; click a chip to activate; double-click to open the panel."
-              style={{ fontFamily: "var(--f-mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.14em", color: "var(--ink-muted)" }}>Conditions</span>
+            <span title={t("canvas.quickConditionsTitle")}
+              style={{ fontFamily: "var(--f-mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.14em", color: "var(--ink-muted)" }}>{t("canvas.conditions")}</span>
             {paletteConds.length === 0 ? (
-              <span style={{ fontSize: 11.5, color: "var(--ink-muted)", fontStyle: "italic", padding: "3px 8px", border: "1px dashed var(--ink-faint)" }}>drag conditions here (or pin a row) for 1-9 one-click access</span>
+              <span style={{ fontSize: 11.5, color: "var(--ink-muted)", fontStyle: "italic", padding: "3px 8px", border: "1px dashed var(--ink-faint)" }}>{t("canvas.quickConditionsEmpty")}</span>
             ) : paletteConds.map((c) => {
               const on = c.id === activeCond;
               const reassign = tool === "select" && selectedId;
@@ -8484,17 +8486,17 @@ export default function TakeoffCanvas() {
               );
             })}
             {paletteConds.length >= PALETTE_MAX && (
-              <span style={{ fontSize: 10.5, color: "var(--ink-muted)", fontStyle: "italic" }}>full ({PALETTE_MAX})</span>
+              <span style={{ fontSize: 10.5, color: "var(--ink-muted)", fontStyle: "italic" }}>{t("canvas.full", { count: PALETTE_MAX })}</span>
             )}
             {/* add a condition without opening the (now-collapsed) sidebar */}
-            <button type="button" onClick={addCondition} title="Add a new condition"
-              style={{ padding: "3px 9px", borderRadius: 0, border: "1px dashed var(--ink-faint)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--ink-muted)" }}>+ condition</button>
+            <button type="button" onClick={addCondition} title={t("canvas.addCondition")}
+              style={{ padding: "3px 9px", borderRadius: 0, border: "1px dashed var(--ink-faint)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--ink-muted)" }}>{t("canvas.addConditionShort")}</button>
           </div>
           {/* the active condition's appearance editor, restored to the top bar —
               same component the docked panel row renders (one source of truth) */}
           {aCond && (
             <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--ink-faint)", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "var(--sp-2)" }}>
-              <button type="button" aria-expanded={conditionDetails} onClick={() => setConditionDetails((v) => !v)} style={{ border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink-secondary)", padding: "var(--sp-1) var(--sp-2)", fontSize: "var(--fs-s)", cursor: "pointer" }}>{conditionDetails ? "▾" : "▸"} {aCond.finish_tag} properties</button>
+              <button type="button" aria-expanded={conditionDetails} onClick={() => setConditionDetails((v) => !v)} style={{ border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink-secondary)", padding: "var(--sp-1) var(--sp-2)", fontSize: "var(--fs-s)", cursor: "pointer" }}>{conditionDetails ? "▾" : "▸"} {t("canvas.conditionProperties", { condition: aCond.finish_tag })}</button>
               {conditionDetails && <ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} layout="row" units={units} />}
             </div>
           )}
@@ -8507,7 +8509,7 @@ export default function TakeoffCanvas() {
           ⊞ to side-by-side, ✕ to close; the dropdown lists every open sheet */}
       {!focusMode && openTabs.length > 0 && (
         <div data-sheet-tabs style={{ display: "flex", gap: 5, alignItems: "center", padding: "5px 14px", flexWrap: openTabs.length > MANY_TABS ? "nowrap" : "wrap", borderBottom: "1px solid var(--ink-faint)", background: "var(--paper-bright)", minWidth: 0 }}>
-          <span style={{ fontFamily: "var(--f-mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.14em", color: "var(--ink-muted)", flexShrink: 0 }}>Sheets</span>
+          <span style={{ fontFamily: "var(--f-mono)", fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.14em", color: "var(--ink-muted)", flexShrink: 0 }}>{t("canvas.sheets")}</span>
           {openTabs.length > MANY_TABS && (
             <button type="button" onClick={() => scrollTabStrip(-1)} title="Scroll sheets left" aria-label="Scroll sheets left" style={{ flexShrink: 0, padding: "4px 5px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink)", cursor: "pointer", display: "inline-flex" }}><Icon name="chevronLeft" size={12} /></button>
           )}
@@ -8551,7 +8553,7 @@ export default function TakeoffCanvas() {
           from the panel header, persisted with the panel prefs. */}
       {!focusMode && !workspaceLayout && panelPrefs.strip && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 14px", flexWrap: "wrap", borderBottom: "1px solid var(--ink-faint)", background: "var(--paper-bright)" }}>
-          <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--ink-muted)" }}>Conditions</span>
+          <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, color: "var(--ink-muted)" }}>{t("canvas.conditions")}</span>
           {conditions.map((c, i) => {
             const on = c.id === activeCond;
             // the 1–9 badge follows the same rule as the hotkeys: palette order
@@ -9909,10 +9911,10 @@ export default function TakeoffCanvas() {
 
           {status !== "ready" && (
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-muted)", fontSize: 15 }}>
-              {status === "loading" && "Loading sheets…"}
-              {status === "rendering" && "Rendering sheet…"}
-              {status === "empty" && "No PDFs yet — click “Open PDF” or drag a plan onto the canvas."}
-              {status === "error" && <span style={{ color: "var(--c-danger)" }}>Error: {err}</span>}
+              {status === "loading" && t("canvas.loadingSheets")}
+              {status === "rendering" && t("canvas.renderingSheet")}
+              {status === "empty" && t("canvas.empty")}
+              {status === "error" && <span style={{ color: "var(--c-danger)" }}>{t("canvas.error", { error: err })}</span>}
             </div>
           )}
 

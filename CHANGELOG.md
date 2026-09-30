@@ -11,6 +11,15 @@ Click **Pin** beside **Sheets** in the top toolbar, then click two corners aroun
 
 ## Unreleased
 
+- **English/Hungarian interface foundation.** Add a persistent language picker,
+  English fallback and Hungarian catalog; localize project entry, workspace
+  chrome, measurement tools, condition and symbol editing, and the on-screen
+  report. Dates and numbers follow the selected locale while display units and
+  persisted project data remain independent. Catalog-parity tests prevent a
+  translation from silently going missing. Stable CSV/XLSX schemas remain
+  English; Unicode-safe Marked Set localization is tracked as the next export
+  slice.
+
 - **Downstream upstream sync through `d0f552e`.** Preserve the compact workspace, condition visibility, protocol/wiki work, geometry fixes and new measurement controls while retaining the metric material workflow and low-voltage object symbols. The self-hosted build deliberately omits the upstream Cloudflare analytics beacon, Premium request surfaces and automatic Premium prompt.
 - **Text a crawler can read, and a correct llms.txt.** The canvas is a React app, so crawlers that run no JavaScript (most AI crawlers) saw an empty `<div id="root">`. `#root` now carries a short plain-HTML description with links to the manuals; it is hidden wherever scripts run and replaced when the app mounts, so the page looks exactly as before. `llms.txt` no longer advertises One-Click (gated) or a stale "40 tools": its count is a marker a web test holds to the README's generated count. The sitemap lists `/privacy/` and `/terms/`.
 
