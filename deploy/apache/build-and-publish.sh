@@ -1,13 +1,12 @@
 #!/bin/sh
 set -eu
 
-# Build the checked-out OpenTakeoff web source with the stack's Node 24
-# Dockerfile, then publish only the verified static output to Apache.
+# Build the checked-out OpenTakeoff web source with the repository's supported
+# self-hosted Dockerfile, then publish only the verified static output to
+# Apache.
 #
 # Expected layout (override the publish path with OPENTAKEOFF_PUBLISH_DIR):
 #   /mnt/applications/stacks/opentakeoff/
-#     Dockerfile
-#     .dockerignore
 #     source/                  <- this repository
 #   /mnt/applications/data/production/opentakeoff/
 #
@@ -22,9 +21,10 @@ fail() {
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
-STACK_DIR=$(CDPATH= cd -- "$REPO_DIR/.." && pwd)
 PUBLISH_DIR=${OPENTAKEOFF_PUBLISH_DIR:-/mnt/applications/data/production/opentakeoff}
 IMAGE_REF=${OPENTAKEOFF_BUILD_IMAGE:-local/opentakeoff-publish:latest}
+DEFAULT_LANGUAGE=${OPENTAKEOFF_DEFAULT_LANGUAGE:-hu}
+DOCKERFILE=$REPO_DIR/deploy/selfhosted/Dockerfile
 
 case "${1:-}" in
   "") ;;
@@ -39,7 +39,7 @@ esac
 
 command -v docker >/dev/null 2>&1 || fail "docker is not installed"
 command -v rsync >/dev/null 2>&1 || fail "rsync is not installed"
-[ -f "$STACK_DIR/Dockerfile" ] || fail "missing $STACK_DIR/Dockerfile"
+[ -f "$DOCKERFILE" ] || fail "missing $DOCKERFILE"
 [ -d "$PUBLISH_DIR" ] || fail "missing $PUBLISH_DIR; create it as the deployment user first"
 [ -w "$PUBLISH_DIR" ] || fail "$PUBLISH_DIR is not writable by the deployment user"
 [ -n "$PUBLISH_DIR" ] && [ "$PUBLISH_DIR" != / ] || fail "unsafe publish directory"
@@ -58,8 +58,13 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-printf 'Building %s from %s\n' "$IMAGE_REF" "$STACK_DIR"
-docker build --pull --tag "$IMAGE_REF" "$STACK_DIR"
+printf 'Building %s from %s\n' "$IMAGE_REF" "$REPO_DIR"
+docker build \
+  --pull \
+  --file "$DOCKERFILE" \
+  --build-arg "VITE_DEFAULT_LANGUAGE=$DEFAULT_LANGUAGE" \
+  --tag "$IMAGE_REF" \
+  "$REPO_DIR"
 
 CONTAINER_ID=$(docker create "$IMAGE_REF")
 docker cp "${CONTAINER_ID}:/usr/share/nginx/html/." "$STAGE_DIR/"

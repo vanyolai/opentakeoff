@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { objectSymbol, resolveObjectStyle } from "../lib/objectPresentation.js";
 import { HatchSwatch } from "./hatches.jsx";
 
@@ -21,10 +22,12 @@ export function ObjectSymbolPreview({ symbolId, color = "currentColor", size = 2
 // choice is presentation only, so callers pass the live condition rather than
 // copying object_style into report rows or changing the export schema.
 export function ConditionMark({ condition, color, variant = "swatch" }) {
+  const { t } = useTranslation();
   const style = resolveObjectStyle(condition);
   const col = color || condition?.color || "#888";
   if (style.marker === "symbol") {
-    const label = objectSymbol(style.symbol_id).label;
+    const symbol = objectSymbol(style.symbol_id);
+    const label = t(`symbols.items.${style.symbol_id}`, { defaultValue: symbol.label });
     if (variant === "legend") {
       return (
         <span data-condition-mark="symbol" data-symbol-id={style.symbol_id} title={label}

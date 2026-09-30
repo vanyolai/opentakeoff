@@ -58,6 +58,16 @@ jobs:
             exit 1
           }
       - run: npm run build
+      - name: Build the supported self-hosted web image
+        working-directory: .
+        run: |
+          docker build \
+            --file deploy/selfhosted/Dockerfile \
+            --build-arg VITE_DEFAULT_LANGUAGE=hu \
+            --tag opentakeoff-web:ci \
+            .
+          docker run --rm --entrypoint sh opentakeoff-web:ci -c \
+            'test "$(id -u):$(id -g)" = "1000:1000" && test -s /usr/share/nginx/html/index.html && test -d /usr/share/nginx/html/assets && test -s /usr/share/nginx/html/demo/sample-finish-plan.pdf'
 
   mcp:
     runs-on: ${{ matrix.os }}

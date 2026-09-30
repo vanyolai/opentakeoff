@@ -1,10 +1,9 @@
 # Docker build context — keep it to what the build actually needs.
 #
-# Both Dockerfiles COPY the repo root, because mcp/ bundles the takeoff engine
-# out of web/src/lib at build time. Without this file that COPY also ships the
-# git history and every local artifact: ~109 MB of .git and, on a developer's
-# machine, ~1.1 GB of node_modules, dist output and the fetched voice model —
-# none of which the build reads. Tracked sources are ~22 MB.
+# The MCP Dockerfiles bundle the takeoff engine from web/src/lib, while the
+# self-hosted web Dockerfile selects web/ and its nginx config from the same
+# repository-root context. Keep that shared context free of git history and
+# generated local artifacts.
 #
 # This is not only a speed fix. A remote builder (Glama's, among others) pays
 # for that context on every build, and a build that fails for being too big or
@@ -25,10 +24,11 @@ mcp/*.mcpb
 # read by the MCP server.
 web/public/models
 
-# Docs, media and fixtures: nothing in the bundle imports them.
+# Docs and development fixtures: neither container build reads them. Keep
+# web/public/demo in the context: the self-hosted browser image serves its
+# bundled sample plan at runtime.
 docs
 demo
-web/public/demo
 web/test
 web/bench
 capture
