@@ -20,6 +20,15 @@ Click **Pin** beside **Sheets** in the top toolbar, then click two corners aroun
   English; Unicode-safe Marked Set localization is tracked as the next export
   slice.
 
+- **Reproducible self-hosted web build.** Add a CI-checked multi-stage Docker
+  image that builds the Node dependency tree on Debian/glibc and serves only
+  the static output from unprivileged nginx as UID:GID `1000:1000`. Include a
+  Dockge-ready Compose template without a pull-only `image:` name, and make the
+  Apache publisher consume this repository-owned Dockerfile so deployment no
+  longer depends on an untested stack-level copy. Raise the existing
+  `brace-expansion` safety override to 1.1.21; the web dependency audit is
+  clean after the update.
+
 - **Downstream upstream sync through `d0f552e`.** Preserve the compact workspace, condition visibility, protocol/wiki work, geometry fixes and new measurement controls while retaining the metric material workflow and low-voltage object symbols. The self-hosted build deliberately omits the upstream Cloudflare analytics beacon, Premium request surfaces and automatic Premium prompt.
 - **Text a crawler can read, and a correct llms.txt.** The canvas is a React app, so crawlers that run no JavaScript (most AI crawlers) saw an empty `<div id="root">`. `#root` now carries a short plain-HTML description with links to the manuals; it is hidden wherever scripts run and replaced when the app mounts, so the page looks exactly as before. `llms.txt` no longer advertises One-Click (gated) or a stale "40 tools": its count is a marker a web test holds to the README's generated count. The sitemap lists `/privacy/` and `/terms/`.
 
@@ -186,7 +195,7 @@ All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 ### Added
 - **A condition can draw its count objects as the original color marker or a grouped built-in plan symbol.** The initial low-voltage library covers electrical basics; bullet, dome and PTZ cameras; data outlets, Wi-Fi APs and racks; PIR and dual-tech detectors, contacts, glass-break and shock detectors, sounders, panels, keypads and panic buttons; access control and intercoms; fire-alarm devices; and supporting junction-box, power-supply and UPS symbols. The docked editor keeps the picker closed until needed, then shows horizontally tabbed topics and only the active topic's icons. A selected symbol also replaces the condition-row swatch and the Report's color square, while square-marker conditions keep their legacy appearance. The choice follows the condition through project JSON, archives, imports, templates, the canvas, and the Marked Set PDF; legacy conditions still resolve to the original marker with no label.
 - **Plan labels for count objects:** none, the condition tag, custom text, or a sequential prefix such as `CAM-`. A sequence without an explicitly saved prefix now derives one from the condition tag (`CAM` becomes `CAM-`) instead of showing a placeholder while issuing bare numbers. Sequential placement writes `CAM-1`, `CAM-2`, … onto the individual object and advances the condition's next number; selecting a count lets the operator edit that issued label without renumbering any other object.
-- **Apache self-hosted publishing:** `deploy/apache/build-and-publish.sh` optionally fast-forwards the checked-out branch, builds through the host stack's Node 24 Dockerfile, verifies the static output, and synchronizes only the OpenTakeoff publication directory. No continuously running OpenTakeoff container is required when an existing Apache serves the output.
+- **Apache self-hosted publishing:** `deploy/apache/build-and-publish.sh` optionally fast-forwards the checked-out branch, builds through the repository-owned self-hosted Dockerfile, verifies the static output, and synchronizes only the OpenTakeoff publication directory. No continuously running OpenTakeoff container is required when an existing Apache serves the output.
 - **Future authored layers are part of the object model now.** `condition.object_style.layer_id` is the type default and `countShape.object.layer_id` is a presence-aware instance override. Layer-management UI is intentionally deferred, but canvas/export consumers already share the resolver so adding it will not require a project-data migration.
 
 ## Unreleased — Metric supporting-material coverage and live counter

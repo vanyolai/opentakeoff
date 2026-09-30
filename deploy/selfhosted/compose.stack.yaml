@@ -1,0 +1,21 @@
+# Copy this file to /mnt/applications/stacks/opentakeoff/compose.yaml.
+# The repository is expected at ./source beside the copied file.
+services:
+  opentakeoff:
+    container_name: opentakeoff
+    build:
+      context: ./source
+      dockerfile: deploy/selfhosted/Dockerfile
+      args:
+        VITE_DEFAULT_LANGUAGE: hu
+    ports:
+      - "8084:8080"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - cloud
+
+networks:
+  cloud:
+    external: true
