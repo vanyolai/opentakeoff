@@ -1,10 +1,42 @@
-# Self-hosting — the one gotcha
+# Self-hosting
 
 OpenTakeoff's own production deploy is Netlify-only (see
 [`DEPLOYMENT.md`](DEPLOYMENT.md)), and Netlify's CDN gets content types right
 automatically. If you build `web/dist` yourself and serve it from your own
-reverse proxy instead—nginx behind Docker or Tailscale, for example—there's
-one gotcha worth knowing about before you run into it blind.
+reverse proxy instead—nginx behind Docker or Tailscale, for example—use the
+repository's supported container build or account for the MIME-type detail
+below.
+
+## Supported Docker build
+
+The downstream repository carries a complete static web image at
+`deploy/selfhosted/Dockerfile`. Build it from the repository root:
+
+```bash
+docker build \
+  --pull \
+  --file deploy/selfhosted/Dockerfile \
+  --build-arg VITE_DEFAULT_LANGUAGE=hu \
+  --tag opentakeoff:local \
+  .
+```
+
+The build stage deliberately uses Node 24 on Debian/glibc. The dependency tree
+contains native optional packages used by Vite, Rollup, esbuild, PDF.js and the
+browser inference bundle; building them on Alpine/musl can fail below the
+JavaScript layer. The final runtime remains the small unprivileged Alpine nginx
+image and contains only static files.
+
+For the Dockge layout where the repository is checked out at
+`/mnt/applications/stacks/opentakeoff/source`, copy
+`deploy/selfhosted/compose.stack.yaml` to the stack root as `compose.yaml`.
+The example intentionally has no `image:` entry: Dockge builds it from source
+instead of trying to pull a private-looking `local/...` name from Docker Hub.
+The container runs as UID:GID `1000:1000`, listens on host port 8084 and joins
+the existing external `cloud` network.
+
+The self-hosted image is built by CI on every pull request, in addition to the
+normal Node-based web checks.
 
 ## `.mjs` served as `application/octet-stream`
 

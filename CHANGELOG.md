@@ -11,6 +11,24 @@ Click **Pin** beside **Sheets** in the top toolbar, then click two corners aroun
 
 ## Unreleased
 
+- **English/Hungarian interface foundation.** Add a persistent language picker,
+  English fallback and Hungarian catalog; localize project entry, workspace
+  chrome, measurement tools, condition and symbol editing, and the on-screen
+  report. Dates and numbers follow the selected locale while display units and
+  persisted project data remain independent. Catalog-parity tests prevent a
+  translation from silently going missing. Stable CSV/XLSX schemas remain
+  English; Unicode-safe Marked Set localization is tracked as the next export
+  slice.
+
+- **Reproducible self-hosted web build.** Add a CI-checked multi-stage Docker
+  image that builds the Node dependency tree on Debian/glibc and serves only
+  the static output from unprivileged nginx as UID:GID `1000:1000`. Include a
+  Dockge-ready Compose template without a pull-only `image:` name, and make the
+  Apache publisher consume this repository-owned Dockerfile so deployment no
+  longer depends on an untested stack-level copy. Raise the existing
+  `brace-expansion` safety override to 1.1.21; the web dependency audit is
+  clean after the update.
+
 - **Downstream upstream sync through `beaa4fe` (2026-10-05).** Integrate the on-device OCR, plan-text search/copy, schedule reader fixes, live `{{qty}}` notes and sheet/snap cleanup. Keep metric material coverage, low-voltage symbols, sequential labels and authored-layer fields; no Cloudflare beacon or Premium prompt is restored. Cross-feature report/PDF tests cover symbols and live notes together.
 - **Downstream upstream sync through `d0f552e`.** Preserve the compact workspace, condition visibility, protocol/wiki work, geometry fixes and new measurement controls while retaining the metric material workflow and low-voltage object symbols. The self-hosted build deliberately omits the upstream Cloudflare analytics beacon, Premium request surfaces and automatic Premium prompt.
 - **On-device reads drop a table's ruling, and Import from schedule repairs and flags misread codes (#482, mcp 0.9.97).** The reader read a cell's rule beside a word as part of it (`[P-1 SAT`, `V2_`, `|ACT-2`), so a bordered code read as `P-1SAT` or wasn't a row at all, and Copy text and search carried the glyph. Every on-device line now loses a leading `|`, a trailing `_` or `|`, a leading `[` or trailing `]` with no partner in the line, and a pair around the whole line that starts with a code or has a space just inside it (`[P-1 SAT]`, `[ P-1 ]`); printed brackets such as `[E]`, `[SEE NOTE 3]` or `P-1 [NOTE 2]` stay; a line that was only ruling is dropped, and a minus sign, en dash or Unicode hyphen between two letters or digits becomes `-`, so `PT−01` no longer keys as PT01. Reads kept in the browser are cleaned when used, without reading again. On a raster schedule, Import from schedule repairs a `$` read for a leading S (`$SM-1` → SSM-1) and an O or I read for 0 or 1 after the code's hyphen, when the characters after the hyphen include a digit (`PT-O1` → PT-01, `G-O1(C)` → G-01C; `T-II` stays), and the row shows **read as PT-O1** with "Repaired from PT-O1; check the code against the schedule." until the code is edited to another one; a row read the usual way keeps a shared code over a repaired one. In MATERIAL, DESCRIPTION and PRODUCT, a lone `7` between two words, at least one with a letter, neither a dimension's `X` and the first not a word that introduces a number (`TYPE 7`, `NO. 7`), is read as `/` (`BASE 7 4 IN` → `BASE / 4 IN`), and `W7` after a floor word as `W/`, with no flag; a printed lone 7 there reads as `/` too. A dropped or absorbed letter (`ST-1` read as `S-1`) still imports with no flag. The reader's confidence was measured as a misread signal and isn't used: it didn't separate misread codes from correct ones (`web/scripts/measure-ocr-confidence.mjs`). Text-layer reads are unchanged.
@@ -195,7 +213,7 @@ All notable changes to OpenTakeoff. Dates are release/merge dates on `main`.
 ### Added
 - **A condition can draw its count objects as the original color marker or a grouped built-in plan symbol.** The initial low-voltage library covers electrical basics; bullet, dome and PTZ cameras; data outlets, Wi-Fi APs and racks; PIR and dual-tech detectors, contacts, glass-break and shock detectors, sounders, panels, keypads and panic buttons; access control and intercoms; fire-alarm devices; and supporting junction-box, power-supply and UPS symbols. The docked editor keeps the picker closed until needed, then shows horizontally tabbed topics and only the active topic's icons. A selected symbol also replaces the condition-row swatch and the Report's color square, while square-marker conditions keep their legacy appearance. The choice follows the condition through project JSON, archives, imports, templates, the canvas, and the Marked Set PDF; legacy conditions still resolve to the original marker with no label.
 - **Plan labels for count objects:** none, the condition tag, custom text, or a sequential prefix such as `CAM-`. A sequence without an explicitly saved prefix now derives one from the condition tag (`CAM` becomes `CAM-`) instead of showing a placeholder while issuing bare numbers. Sequential placement writes `CAM-1`, `CAM-2`, … onto the individual object and advances the condition's next number; selecting a count lets the operator edit that issued label without renumbering any other object.
-- **Apache self-hosted publishing:** `deploy/apache/build-and-publish.sh` optionally fast-forwards the checked-out branch, builds through the host stack's Node 24 Dockerfile, verifies the static output, and synchronizes only the OpenTakeoff publication directory. No continuously running OpenTakeoff container is required when an existing Apache serves the output.
+- **Apache self-hosted publishing:** `deploy/apache/build-and-publish.sh` optionally fast-forwards the checked-out branch, builds through the repository-owned self-hosted Dockerfile, verifies the static output, and synchronizes only the OpenTakeoff publication directory. No continuously running OpenTakeoff container is required when an existing Apache serves the output.
 - **Future authored layers are part of the object model now.** `condition.object_style.layer_id` is the type default and `countShape.object.layer_id` is a presence-aware instance override. Layer-management UI is intentionally deferred, but canvas/export consumers already share the resolver so adding it will not require a project-data migration.
 
 ## Unreleased — Metric supporting-material coverage and live counter

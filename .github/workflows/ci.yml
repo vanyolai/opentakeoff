@@ -73,9 +73,18 @@ jobs:
             exit 1
           }
       - run: npm run build
-      # One ORT wasm in dist, no OpenCV or @napi-rs/canvas code, and a staged
-      # manifest that matches the wasm actually shipped (#469).
+      # Match the pinned runtime and all staged OCR files in the built output.
       - run: node scripts/check-ocr-dist.mjs
+      - name: Build the supported self-hosted web image
+        working-directory: .
+        run: |
+          docker build \
+            --file deploy/selfhosted/Dockerfile \
+            --build-arg VITE_DEFAULT_LANGUAGE=hu \
+            --tag opentakeoff-web:ci \
+            .
+          docker run --rm --entrypoint sh opentakeoff-web:ci -c \
+            'test "$(id -u):$(id -g)" = "1000:1000" && test -s /usr/share/nginx/html/index.html && test -d /usr/share/nginx/html/assets && test -s /usr/share/nginx/html/demo/sample-finish-plan.pdf && test -s /usr/share/nginx/html/models/ocr/manifest.json'
 
   mcp:
     runs-on: ${{ matrix.os }}

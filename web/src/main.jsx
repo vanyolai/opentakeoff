@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router";
+import { I18nextProvider, useTranslation } from "react-i18next";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/print.css";   // OT-only print block — kept out of app.css so tokens/app stay byte-synced with Spline
@@ -16,6 +17,8 @@ import { projectHomeFolderId } from "./lib/projectHome.js";
 import { initTheme } from "./lib/theme.js";
 import { initDrawStyle } from "./lib/drawStyles.js";
 import { initDraftOutline } from "./lib/draftOutline.js";
+import i18n from "./i18n/index.js";
+import LanguageSwitcher from "./components/LanguageSwitcher.jsx";
 
 initTheme();   // index.html set data-theme pre-paint; this keeps it live
 initDrawStyle();   // syncs a draw-style choice made in another tab
@@ -53,6 +56,7 @@ const brand = (
 function Centered({ title, body }) {
   return (
     <div style={centered}>
+      <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
       {brand}
       <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
       {body ? <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>{body}</div> : null}
@@ -65,24 +69,28 @@ function Centered({ title, body }) {
 // extra element under the button (the home flavor's skip link).
 function SignInScreen({
   ready, signIn,
-  title = "This project is stored in your team's Google Drive",
-  body = "Sign in with your team Google account to open it. Only accounts on the team domain can sign in.",
+  title,
+  body,
   footer = null,
 }) {
+  const { t } = useTranslation();
   const [err, setErr] = useState("");
+  const shownTitle = title || t("auth.googleProjectTitle");
+  const shownBody = body || t("auth.googleProjectBody");
   return (
     <div style={centered}>
+      <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
       {brand}
-      <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
-      <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>{body}</div>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>{shownTitle}</div>
+      <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>{shownBody}</div>
       <button type="button" disabled={!ready}
         onClick={() => { setErr(""); signIn().catch((e) => setErr(String(e?.message || e))); }}
         style={{ padding: "9px 16px", border: "1px solid var(--ink)", background: "var(--ink)",
           color: "var(--paper-bright)", cursor: ready ? "pointer" : "default", fontWeight: 600,
           fontSize: 13.5, opacity: ready ? 1 : 0.5 }}>
-        Sign in with Google
+        {t("auth.signInGoogle")}
       </button>
-      {err ? <div style={{ fontSize: 12.5, color: "var(--c-danger)", maxWidth: 460 }}>Sign-in failed: {err}</div> : null}
+      {err ? <div style={{ fontSize: 12.5, color: "var(--c-danger)", maxWidth: 460 }}>{t("auth.signInFailed", { error: err })}</div> : null}
       {footer}
     </div>
   );
@@ -92,6 +100,7 @@ function SignInScreen({
 // Drive-backed store before rendering the canvas. The Google/Drive modules are
 // dynamically imported so the anonymous bundle never pulls them in.
 function ProjectGate({ projectId }) {
+  const { t } = useTranslation();
   const { user, ready, signIn } = useGoogleAuth();
   const [storeReady, setStoreReady] = useState(false);
   const [error, setError] = useState("");
@@ -151,8 +160,8 @@ function ProjectGate({ projectId }) {
   useEffect(() => () => { setActiveStore(); }, []);
 
   if (!user) return <SignInScreen ready={ready} signIn={signIn} />;
-  if (error) return <Centered title="Couldn't open this project" body={error} />;
-  if (!storeReady) return <Centered title="Opening project…" />;
+  if (error) return <Centered title={t("auth.projectOpenFailed")} body={error} />;
+  if (!storeReady) return <Centered title={t("auth.projectOpening")} />;
   // key on projectId so switching projects (or sign-in) remounts a fresh canvas
   return <TakeoffCanvas key={projectId} />;
 }
@@ -164,16 +173,17 @@ function ProjectGate({ projectId }) {
 // — this route only exists for whoever explicitly asks to browse team
 // projects, so a build with no root configured just bounces back to `/`.
 function ProjectHomeGate() {
+  const { t } = useTranslation();
   const { user, ready, signIn } = useGoogleAuth();
   if (!isGoogleConfigured() || !projectHomeFolderId()) return <Navigate to="/" replace />;
   if (!user) {
     return (
       <SignInScreen ready={ready} signIn={signIn}
-        title="Your team's projects live in Google Drive"
-        body="Sign in with your team Google account to browse and open them. Only accounts on the team domain can sign in."
+        title={t("auth.googleProjectsTitle")}
+        body={t("auth.googleProjectsBody")}
         footer={
           <Link to="/" style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>
-            skip — use the local canvas
+            {t("auth.localCanvas")}
           </Link>
         } />
     );
@@ -191,6 +201,7 @@ function ProjectHomeGate() {
 //     needs a user gesture, so boot can only ask via a button)
 //   • handle dead        → say so, offer "work locally" and "forget folder"
 function FolderGate() {
+  const { t } = useTranslation();
   // status: checking | plain | building | ready | prompt | dead
   const [status, setStatus] = useState("checking");
   const [link, setLink] = useState(null);
@@ -223,7 +234,7 @@ function FolderGate() {
       // throws, which the reconciler treats as offline (local stays canonical).
       const getDir = async () => {
         if ((await queryFolderPermission(l.handle)) !== "granted") {
-          throw new Error("folder permission lapsed");
+          throw new Error(t("folderSync.permissionLapsed"));
         }
         return l.handle;
       };
@@ -267,32 +278,31 @@ function FolderGate() {
   if (status === "prompt") {
     return (
       <div style={centered}>
+        <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
         {brand}
-        <div style={{ fontSize: 15, fontWeight: 600 }}>This workspace syncs to the folder “{link.name}”</div>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>{t("folderSync.promptTitle", { name: link.name })}</div>
         <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>
-          The browser needs you to re-allow access after a restart — one click, and your takeoff
-          keeps syncing through that folder. Nothing leaves your machine except what the folder's
-          own sync client replicates.
+          {t("folderSync.promptBody")}
         </div>
         <button type="button"
           onClick={async () => {
             const perm = await requestFolderPermission(link.handle);
             if (perm === "granted") await install(link);
-            else setErr("The browser did not grant access. You can keep working locally, or forget the folder.");
+            else setErr(t("folderSync.denied"));
           }}
           style={{ padding: "9px 16px", border: "1px solid var(--ink)", background: "var(--ink)",
             color: "var(--paper-bright)", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-          Resume folder sync
+          {t("folderSync.resume")}
         </button>
         {err ? <div style={{ fontSize: 12.5, color: "var(--c-danger)", maxWidth: 460 }}>{err}</div> : null}
         <div style={{ display: "flex", gap: 16 }}>
           <button type="button" onClick={() => setStatus("plain")}
             style={{ border: "none", background: "transparent", color: "var(--ink-muted)", fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>
-            not now — work locally
+            {t("common.notNowWorkLocally")}
           </button>
           <button type="button" onClick={forget}
             style={{ border: "none", background: "transparent", color: "var(--c-danger)", fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>
-            forget this folder
+            {t("folderSync.forget")}
           </button>
         </div>
       </div>
@@ -302,21 +312,21 @@ function FolderGate() {
   // unplugged). Local work is safe; say exactly that.
   return (
     <div style={centered}>
+      <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
       {brand}
-      <div style={{ fontSize: 15, fontWeight: 600 }}>The synced folder “{link?.name}” can't be opened</div>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>{t("folderSync.deadTitle", { name: link?.name || "" })}</div>
       <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>
-        {err || "The folder may have been moved or deleted."} Your takeoff is safe in this browser —
-        you can keep working locally, or forget the folder link.
+        {t("folderSync.safeBody", { reason: err || t("folderSync.deadReason") })}
       </div>
       <div style={{ display: "flex", gap: 16 }}>
         <button type="button" onClick={() => setStatus("plain")}
           style={{ padding: "9px 16px", border: "1px solid var(--ink)", background: "var(--ink)",
             color: "var(--paper-bright)", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-          Work locally
+          {t("common.workLocally")}
         </button>
         <button type="button" onClick={forget}
           style={{ border: "none", background: "transparent", color: "var(--c-danger)", fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>
-          forget this folder
+          {t("folderSync.forget")}
         </button>
       </div>
     </div>
@@ -329,6 +339,7 @@ function FolderGate() {
 // composite. Same install-then-mount discipline as the other gates; every
 // state is readable, never a wedge. MSAL and all Graph code load only here.
 function M365Gate({ cfg }) {
+  const { t } = useTranslation();
   // status: checking | signin | building | ready | local | dead
   const [status, setStatus] = useState("checking");
   const [err, setErr] = useState("");
@@ -399,11 +410,11 @@ function M365Gate({ cfg }) {
   if (status === "signin") {
     return (
       <div style={centered}>
+        <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
         {brand}
-        <div style={{ fontSize: 15, fontWeight: 600 }}>This workspace syncs through your Microsoft 365 library</div>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>{t("m365.promptTitle")}</div>
         <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>
-          Sign in with your work account to keep syncing. The token stays in this browser —
-          there is no server of ours between you and your tenant. (Experimental — issue #315.)
+          {t("m365.promptBody")}
         </div>
         <button type="button"
           onClick={async () => {
@@ -414,17 +425,17 @@ function M365Gate({ cfg }) {
               setStatus("building");
               await install();
             } catch (e) {
-              setErr(`Sign-in failed: ${String(e?.message || e)} — if this is an admin-consent block, SELF_HOSTING.md names the scope to consent.`);
+              setErr(t("m365.signInFailed", { error: String(e?.message || e) }));
             }
           }}
           style={{ padding: "9px 16px", border: "1px solid var(--ink)", background: "var(--ink)",
             color: "var(--paper-bright)", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-          Sign in with Microsoft
+          {t("auth.signInMicrosoft")}
         </button>
         {err ? <div style={{ fontSize: 12.5, color: "var(--c-danger)", maxWidth: 460 }}>{err}</div> : null}
         <div style={{ display: "flex", gap: 16 }}>
-          <button type="button" onClick={() => setStatus("local")} style={linkBtn}>not now — work locally</button>
-          <button type="button" onClick={stop} style={{ ...linkBtn, color: "var(--c-danger)" }}>stop syncing through 365</button>
+          <button type="button" onClick={() => setStatus("local")} style={linkBtn}>{t("common.notNowWorkLocally")}</button>
+          <button type="button" onClick={stop} style={{ ...linkBtn, color: "var(--c-danger)" }}>{t("m365.stop")}</button>
         </div>
       </div>
     );
@@ -432,20 +443,19 @@ function M365Gate({ cfg }) {
   // dead: modules or store failed — say exactly that, local work is safe.
   return (
     <div style={centered}>
+      <div style={{ position: "absolute", top: 14, right: 14 }}><LanguageSwitcher /></div>
       {brand}
-      <div style={{ fontSize: 15, fontWeight: 600 }}>365 sync can't start</div>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>{t("m365.deadTitle")}</div>
       <div style={{ fontSize: 13, color: "var(--ink-muted)", maxWidth: 460 }}>
-        {err || "The Microsoft sign-in layer failed to load."} Your takeoff is safe in this browser.
-        This path is experimental (issue #315) — a report of this exact message is exactly the
-        external testing it needs.
+        {t("m365.deadBody", { reason: err || t("m365.deadReason") })}
       </div>
       <div style={{ display: "flex", gap: 16 }}>
         <button type="button" onClick={() => setStatus("local")}
           style={{ padding: "9px 16px", border: "1px solid var(--ink)", background: "var(--ink)",
             color: "var(--paper-bright)", cursor: "pointer", fontWeight: 600, fontSize: 13.5 }}>
-          Work locally
+          {t("common.workLocally")}
         </button>
-        <button type="button" onClick={stop} style={{ ...linkBtn, color: "var(--c-danger)" }}>stop syncing through 365</button>
+        <button type="button" onClick={stop} style={{ ...linkBtn, color: "var(--c-danger)" }}>{t("m365.stop")}</button>
       </div>
     </div>
   );
@@ -490,13 +500,15 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <GoogleAuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/projects" element={<ProjectHomeGate />} />
-          <Route path="*" element={<App />} />
-        </Routes>
-      </BrowserRouter>
-    </GoogleAuthProvider>
+    <I18nextProvider i18n={i18n}>
+      <GoogleAuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/projects" element={<ProjectHomeGate />} />
+            <Route path="*" element={<App />} />
+          </Routes>
+        </BrowserRouter>
+      </GoogleAuthProvider>
+    </I18nextProvider>
   </React.StrictMode>
 );

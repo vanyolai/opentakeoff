@@ -3,6 +3,7 @@
 // a grand total. Exports to CSV / JSON, prints, and hosts the opt-in
 // "Contribute to the open flooring model" flow.
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../brand/icons.jsx";
 import ToolMenu from "./ToolMenu.jsx";
 import { conditionTotals, grandTotals, sheetTotals, sheetGroupedRows, labelGroupedRows, authorGroupedRows, sheetLabelGroupedRows, round2, totalsToCsv, downloadText, materialsSummary, reportJson, hasMultipliers, BY_SHEET_BASE_NOTE } from "../lib/totals.js";
@@ -27,12 +28,13 @@ import { resolveBranding, loadBrandingSelection, saveBrandingSelection } from ".
 import { projectIdFromUrl } from "../lib/store.js";
 import { describeConditionEdit, proposedConditionEditRows } from "../lib/proposals.js";
 import { ConditionMark } from "./ObjectMarker.jsx";
+import { formatDate, formatNumber } from "../i18n/index.js";
 import { qtyLabels, resolveNote } from "../lib/noteFields.ts";
 
-const num = (v, d = 1) => (Number(v) || 0).toLocaleString(undefined, { maximumFractionDigits: d });
-
-// the report's one caveat line — page-strip on every printed page + masthead
-const DISCLAIMER = "Quantities derived from drawings at stated scales; verify in field.";
+const num = (v, d = 1) => formatNumber(v, { maximumFractionDigits: d });
+const AREA_COLUMN_KEYS = new Set(["floor_sf", "wall_sf", "border_sf", "total_sf", "total_sf_net", "waste_sf"]);
+const LENGTH_COLUMN_KEYS = new Set(["lf", "waste_lf", "perimeter_ref"]);
+const LOCALIZED_COLUMN_KEYS = new Set(["finish", "shapes", "ea", "waste_pct", "sy_net", ...AREA_COLUMN_KEYS, ...LENGTH_COLUMN_KEYS]);
 
 // one-line hints for the opt-in columns in the picker (waste hint sits under
 // the second waste checkbox so it reads once for the pair)
@@ -50,6 +52,8 @@ const sheetNum = (v, d = 1) => {
 };
 
 export default function ReportPanel({ projectName, onProjectName, conditions, shapes, sheetLabel, sheetDims, onMarkedSet, markedSetDark, onClose, markups = [], rfis = [], scaleInfo = [], provenanceCounters = null, clientInfo = {}, onClientInfo, conditionColumns = [], shapeLabels = [], units = "imperial", rollByCond = null, conditionEditProposals = [] }) {
+  const { t } = useTranslation();
+  const disclaimer = t("report.disclaimer");
   const conditionById = useMemo(() => new Map(conditions.map((condition) => [condition.id, condition])), [conditions]);
   // proposals (#365): a pending condition-edit diff prints BESIDE the current
   // values — the row's numbers are always the current knobs; the chip says
@@ -159,6 +163,11 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
   // inside totalsToCsv/reportWorkbook so each output has ONE conversion site.
   const M = units === "metric";
   const AU = areaUnit(units), LU = lenUnit(units);
+  const screenColumnHeader = (column) => {
+    if (!LOCALIZED_COLUMN_KEYS.has(column.key)) return column.header;
+    const unit = AREA_COLUMN_KEYS.has(column.key) ? AU : LENGTH_COLUMN_KEYS.has(column.key) ? LU : "";
+    return t(`report.columnHeaders.${column.key}`, { unit, defaultValue: column.header });
+  };
   const tableCols = applyUnits(visibleCols([...TABLE_PROFILE, ...customCols, ...specCols, ...laborCols, ...rollCols], colPrefs), units);
   // group-by choice: "" (none) | "sheet" | a custom column id; normalized
   // ONCE per render and used everywhere (select value AND partitioning) — a
@@ -429,7 +438,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
     <React.Fragment key={c.key}>
       <label style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0", cursor: "pointer" }}>
         <input name="report-column-toggle" type="checkbox" checked={colPrefs[c.key] ?? c.defaultVisible} onChange={() => toggleCol(c)} />
-        <span>{c.header}</span>
+        <span>{screenColumnHeader(c)}</span>
       </label>
       {COL_HINTS[c.key] && (
         <div style={{ margin: "0 0 4px 24px", fontSize: 10.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>{COL_HINTS[c.key]}</div>
@@ -441,54 +450,54 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
     <div className="report-panel" style={{ ...theme.vars, position: "absolute", inset: 0, zIndex: 50, display: "flex", flexDirection: "column", background: "var(--paper-cream)" }}>
       <div className="report-toolbar" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: "1px solid var(--ink)", background: "var(--paper-bright)" }}>
         <Icon name="takeoffs" size={18} />
-        <strong style={{ fontFamily: "var(--f-display)", fontSize: 16, color: "var(--ink)" }}>Takeoff report</strong>
-        <input name="project-name" value={projectName} onChange={(e) => onProjectName(e.target.value)} placeholder="Project name (optional)"
+        <strong style={{ fontFamily: "var(--f-display)", fontSize: 16, color: "var(--ink)" }}>{t("report.title")}</strong>
+        <input name="project-name" value={projectName} onChange={(e) => onProjectName(e.target.value)} placeholder={t("report.projectName")}
           className="field-input" style={{ width: 260, padding: "5px 9px", fontSize: 13 }} />
         <div style={{ flex: 1 }} />
         <button className="btn-ghost" onClick={() => setShowInfo(true)}
-          title="Your company identity and the client/job details for the print header and marked-set cover">Project info</button>
+          title={t("report.projectInfoTitle")}>{t("report.projectInfo")}</button>
         {/* always rendered, even with zero custom columns — Sheet grouping
             is useful on its own */}
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--ink)", whiteSpace: "nowrap" }}
-          title="Break the condition table into sections with subtotals">
-          Group:
+          title={t("report.groupTitle")}>
+          {t("report.group")}
           <select name="report-group-by" value={groupBy} onChange={(e) => { setGroupByRaw(e.target.value); saveGroupBy(e.target.value); }}
             style={{ padding: "5px 6px", border: "1px solid var(--ink-faint)", background: "transparent", fontSize: 12, maxWidth: 160 }}>
-            <option value="">None</option>
-            <option value="sheet">Sheet</option>
-            {shapeLabels.length > 0 && <option value="label">Label</option>}
-            {hasAuthors && <option value="author">Author</option>}
+            <option value="">{t("common.none")}</option>
+            <option value="sheet">{t("report.sheet")}</option>
+            {shapeLabels.length > 0 && <option value="label">{t("report.label")}</option>}
+            {hasAuthors && <option value="author">{t("report.author")}</option>}
             {conditionColumns.map((cc) => (
               <option key={cc.id} value={cc.id}>{columnLabel(cc)}</option>
             ))}
           </select>
         </label>
         <div ref={colsRef} style={{ position: "relative" }}>
-          <button className="btn-ghost" onClick={() => setShowCols((s) => !s)} title="Choose which columns the table and CSV show">Columns</button>
+          <button className="btn-ghost" onClick={() => setShowCols((s) => !s)} title={t("report.columnsTitle")}>{t("report.columns")}</button>
           {showCols && (
             <div className="report-modal" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 70, width: 272, background: "var(--paper-bright)", border: "1px solid var(--ink)", boxShadow: "var(--shadow-2)", padding: "10px 12px", fontSize: 12.5, color: "var(--ink)" }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
-                <strong style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>Columns</strong>
+                <strong style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>{t("report.columns")}</strong>
                 <div style={{ flex: 1 }} />
                 <button onClick={applyLaborPreset} title="No-waste actuals per condition — hides SF/SY w/Waste, shows Total SF"
-                  style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: "0 10px 0 0" }}>Labor view</button>
+                  style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: "0 10px 0 0" }}>{t("report.laborView")}</button>
                 <button onClick={() => { setColPrefs({}); saveColPrefs({}); }} title="Back to the default column set"
-                  style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: "0 10px 0 0" }}>Reset</button>
-                <button onClick={() => setShowCols(false)} title="Close"
+                  style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: "0 10px 0 0" }}>{t("common.reset")}</button>
+                <button onClick={() => setShowCols(false)} title={t("common.close")}
                   style={{ border: "none", background: "transparent", color: "var(--ink-muted)", cursor: "pointer", fontSize: 13, padding: 0, lineHeight: 1 }}>✕</button>
               </div>
               {TABLE_PROFILE.filter((c) => !c.locked && c.defaultVisible).map(colCheckbox)}
-              <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>Optional</div>
+              <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>{t("common.optional")}</div>
               {TABLE_PROFILE.filter((c) => !c.locked && !c.defaultVisible).map(colCheckbox)}
-              <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>Custom columns</div>
+              <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>{t("report.customColumns")}</div>
               {customCols.length ? customCols.map(colCheckbox) : (
-                <div style={{ fontSize: 10.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>No custom columns yet — define them from the condition bar in the canvas.</div>
+                <div style={{ fontSize: 10.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>{t("report.noCustomColumns")}</div>
               )}
               {/* read-only product-spec columns — only shown when a schedule
                   import attached spec data to at least one condition */}
               {specCols.length > 0 && (
                 <>
-                  <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>Product spec (imported)</div>
+                  <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>{t("report.productSpec")}</div>
                   {specCols.map(colCheckbox)}
                 </>
               )}
@@ -496,7 +505,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                   a value typed in from the Supporting Materials panel */}
               {laborCols.length > 0 && (
                 <>
-                  <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>Labor & subfloor</div>
+                  <div style={{ borderTop: "1px solid var(--ink-faint)", margin: "8px 0 4px", paddingTop: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-muted)" }}>{t("report.laborSubfloor")}</div>
                   {laborCols.map(colCheckbox)}
                 </>
               )}
@@ -505,7 +514,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
           )}
         </div>
         <div ref={templatesRef} style={{ position: "relative" }}>
-          <button className="btn-ghost" onClick={() => setShowTemplates((s) => !s)} title="Save and recall report layouts (columns + grouping)">Templates{templates.length ? ` (${templates.length})` : ""}</button>
+          <button className="btn-ghost" onClick={() => setShowTemplates((s) => !s)} title="Save and recall report layouts (columns + grouping)">{t("report.templates")}{templates.length ? ` (${templates.length})` : ""}</button>
           {showTemplates && (
             <div className="report-modal" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 70, width: 260, background: "var(--paper-bright)", border: "1px solid var(--ink)", boxShadow: "var(--shadow-2)", padding: "10px 12px", fontSize: 12.5, color: "var(--ink)" }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
@@ -553,7 +562,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
           )}
         </div>
         <div ref={themeRef} style={{ position: "relative" }}>
-          <button className="btn-ghost" onClick={() => setShowTheme((s) => !s)} title="Apply an imported design-token theme to the report (colors + fonts)">Theme{theme.name ? " ●" : ""}</button>
+          <button className="btn-ghost" onClick={() => setShowTheme((s) => !s)} title="Apply an imported design-token theme to the report (colors + fonts)">{t("report.theme")}{theme.name ? " ●" : ""}</button>
           {showTheme && (
             <div className="report-modal" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 70, width: 292, background: "var(--paper-bright)", border: "1px solid var(--ink)", boxShadow: "var(--shadow-2)", padding: "10px 12px", fontSize: 12.5, color: "var(--ink)" }}>
               <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
@@ -598,7 +607,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         <ToolMenu
           title="Download the report and shape data"
           disabled={!rows.length && !shapes.length && !markups.length && !rfis.length}
-          face={<><Icon name="document" size={13} />Export</>}
+          face={<><Icon name="document" size={13} />{t("report.export")}</>}
           items={[
             { section: "Report" },
             { id: "csv", icon: "document", label: "CSV", disabled: !rows.length, onSelect: exportCsv },
@@ -617,7 +626,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         <ToolMenu
           title="Print the report, or generate the marked-set PDF"
           disabled={!rows.length && !markups.length && !rfis.length /* both items are disabled exactly here: with no rows/rfis, the marked-set condition also collapses to true */}
-          face={<span>Print</span>}
+          face={<span>{t("report.print")}</span>}
           items={[
             { id: "print", label: "Print report", disabled: !rows.length && !markups.length && !rfis.length, title: "Print the on-screen report (browser print / save as PDF)", onSelect: () => window.print() },
             ...(onMarkedSet ? [
@@ -640,9 +649,9 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
           title="Optionally contribute this takeoff's derived data to the open flooring model">
           <Icon name="oneClick" size={13} />Contribute
         </button>
-        <button onClick={onClose} title="Back to the canvas (Esc)"
+        <button onClick={onClose} title={t("report.closeTitle")}
           style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink)", cursor: "pointer", fontSize: 12.5 }}>
-          <Icon name="close" size={12} />Close
+          <Icon name="close" size={12} />{t("common.close")}
         </button>
       </div>
 
@@ -651,7 +660,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
             the top of every printed page (screen hides it) — a fixed footer would
             overlap the last row of intermediate pages */}
         <table className="report-flow"><thead><tr><td>
-          {projectName || "Untitled project"} — {DISCLAIMER}
+          {projectName || t("report.untitledProject")} — {disclaimer}
         </td></tr></thead><tbody><tr><td>
         {/* print-only masthead — hidden on screen via app.css. Title-block header
             (logo/firm row · project title · bordered fact grid), the drafting-
@@ -677,19 +686,19 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                 <div style={{ fontFamily: "var(--f-display)", fontWeight: 700, fontSize: 12.5, lineHeight: 1.15 }}>{brand.brandName}</div>
               )}
             </div>
-            <div style={{ fontFamily: "var(--f-mono)", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>Takeoff Report</div>
+            <div style={{ fontFamily: "var(--f-mono)", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-muted)", whiteSpace: "nowrap" }}>{t("report.title")}</div>
           </div>
 
           {/* project title */}
-          <div style={{ fontFamily: "var(--f-display)", fontSize: 25, fontWeight: 700, letterSpacing: "0.005em", textTransform: "uppercase", lineHeight: 0.98, margin: "11px 0 9px" }}>{projectName || "Untitled project"}</div>
+          <div style={{ fontFamily: "var(--f-display)", fontSize: 25, fontWeight: 700, letterSpacing: "0.005em", textTransform: "uppercase", lineHeight: 0.98, margin: "11px 0 9px" }}>{projectName || t("report.untitledProject")}</div>
 
           {/* title-block fact grid */}
           {(() => {
             const cells = [
-              ["Client", clientInfo.client_name],
-              ["Reference", clientInfo.reference],
-              ["Date", clientInfo.date || new Date().toLocaleDateString()],
-              ["Prepared by", brand.brandName],
+              [t("report.client"), clientInfo.client_name],
+              [t("report.reference"), clientInfo.reference],
+              [t("report.date"), clientInfo.date || formatDate()],
+              [t("report.preparedBy"), brand.brandName],
             ];
             return (
               <div style={{ display: "grid", gridTemplateColumns: `repeat(${cells.length}, 1fr)`, border: "1px solid var(--ink)", marginBottom: hasClient && clientInfo.client_address ? 8 : 12 }}>
@@ -713,8 +722,8 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
             {scaleInfo.map((si) => (
               <div key={si.sheet_id}>{sheetLabel ? sheetLabel(si.sheet_id) : si.sheet_id} — {!si.scale_source || si.scale_source === "unknown" ? "scale set — provenance unrecorded" : si.scale_source}{si.scale_confirmed === false ? <span style={{ color: "var(--c-warning)", fontWeight: 700 }}> · agent-set, UNCONFIRMED</span> : null}</div>
             ))}
-            <div>Generated {new Date().toLocaleDateString()}</div>
-            <div>{DISCLAIMER}</div>
+            <div>{t("report.generated", { date: formatDate() })}</div>
+            <div>{disclaimer}</div>
           </div>
         </div>
         {/* the empty-state hides once markups exist — "Revisions noted" below
@@ -723,7 +732,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         {!rows.length ? (
           markups.length ? null : (
             <div style={{ padding: 48, textAlign: "center", color: "var(--ink-muted)" }}>
-              Nothing measured yet — trace some areas, then come back for the breakdown.
+              {t("report.empty")}
             </div>
           )
         ) : (
@@ -735,7 +744,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
               the partition degenerates to one group. */}
           {grouped && (
             <p style={{ maxWidth: 980, margin: "0 auto 8px", fontSize: 11.5, color: "var(--ink-muted)" }}>
-              Grouped by <strong>{groupCol ? columnLabel(groupCol) : groupBy === "label" ? "label" : groupBy === "author" ? "author" : "sheet"}</strong>
+              {t("report.groupedBy")} <strong>{groupCol ? columnLabel(groupCol) : t(groupBy === "label" ? "report.label" : groupBy === "author" ? "report.author" : "report.sheet")}</strong>
             </p>
           )}
           <table style={{ width: "100%", maxWidth: 980, margin: "0 auto", borderCollapse: "collapse", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)" }}>
@@ -743,7 +752,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
               <tr>
                 {tableCols.map((c) => (
                   // custom, spec, and labor columns are text — header left-aligns with the cells
-                  <th key={c.key} style={c.key === "finish" || c.custom || c.spec || c.labor ? { ...th, textAlign: "left" } : c.accent ? { ...th, color: "var(--cobalt)" } : th}>{c.header}</th>
+                  <th key={c.key} style={c.key === "finish" || c.custom || c.spec || c.labor ? { ...th, textAlign: "left" } : c.accent ? { ...th, color: "var(--cobalt)" } : th}>{screenColumnHeader(c)}</th>
                 ))}
               </tr>
             </thead>
@@ -781,7 +790,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                   {/* single-row group: no subtotal — it would repeat the row verbatim */}
                   {sub && (
                     <tr>
-                      <td style={{ ...td, textAlign: "left", borderTop: "1px solid var(--ink-soft)", color: "var(--ink-muted)", fontWeight: 600 }}>Subtotal</td>
+                      <td style={{ ...td, textAlign: "left", borderTop: "1px solid var(--ink-soft)", color: "var(--ink-muted)", fontWeight: 600 }}>{t("common.subtotal")}</td>
                       {/* lighter than the grand-total tfoot: thin border,
                           muted color; same foot mechanism on the group's
                           own grandTotals */}
@@ -797,7 +806,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
             })}
             <tfoot>
               <tr>
-                <td style={{ ...td, textAlign: "left", borderTop: "2px solid var(--ink)", borderBottom: "2px solid var(--ink)", background: "var(--paper-cream)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--f-mono)" }}>Total</td>
+                <td style={{ ...td, textAlign: "left", borderTop: "2px solid var(--ink)", borderBottom: "2px solid var(--ink)", background: "var(--paper-cream)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: "var(--f-mono)" }}>{t("common.total")}</td>
                 {/* finish is always first & locked; every other visible column gets its
                     own td — footed columns render foot(g), ref columns never foot */}
                 {tableCols.slice(1).map((c) => (
@@ -828,17 +837,17 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         )}
         {rows.length > 0 && bySheet.length > 0 && (
           <div style={{ maxWidth: 980, margin: "26px auto 0" }}>
-            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>By sheet</h3>
+            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>{t("report.bySheet")}</h3>
             {bySheet.map((gp) => (
               <div key={gp.sheet_id} style={{ margin: "0 0 14px" }}>
                 <h3 style={{ fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: "0.06em", color: "var(--ink-muted)", margin: "0 0 6px" }}>{sheetLabel ? sheetLabel(gp.sheet_id) : gp.sheet_id}</h3>
                 <table style={{ width: "100%", borderCollapse: "collapse", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)" }}>
                   <thead>
                     <tr>
-                      <th style={{ ...th, textAlign: "left" }}>Finish</th>
-                      <th style={th}>Floor {AU}</th>
-                      <th style={th}>Wall {AU}</th>
-                      <th style={th}>Border {AU}</th>
+                      <th style={{ ...th, textAlign: "left" }}>{t("report.finish")}</th>
+                      <th style={th}>{t("report.floor", { unit: AU })}</th>
+                      <th style={th}>{t("report.wall", { unit: AU })}</th>
+                      <th style={th}>{t("report.border", { unit: AU })}</th>
                       <th style={th}>{LU}</th>
                       <th style={th}>EA</th>
                     </tr>
@@ -876,13 +885,13 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         {markups.some((m) => m.type !== "svg" && m.type !== "image") && (
           <div style={{ maxWidth: 980, margin: "26px auto 0" }}>
             {/* svg symbols and image markups aren't revision notes — excluded */}
-            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>Revisions noted</h3>
+            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>{t("report.revisions")}</h3>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)" }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, textAlign: "left" }}>Type</th>
-                  <th style={{ ...th, textAlign: "left" }}>Sheet</th>
-                  <th style={{ ...th, textAlign: "left" }}>Note</th>
+                  <th style={{ ...th, textAlign: "left" }}>{t("report.type")}</th>
+                  <th style={{ ...th, textAlign: "left" }}>{t("report.sheet")}</th>
+                  <th style={{ ...th, textAlign: "left" }}>{t("report.note")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -906,13 +915,13 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         )}
         {matSummary.length > 0 && (
           <div style={{ maxWidth: 980, margin: "26px auto 0" }}>
-            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>Supporting materials — buy list</h3>
+            <h3 style={{ fontFamily: "var(--f-display)", fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink)", margin: "0 0 10px", paddingBottom: 5, borderBottom: "1.25px solid var(--ink)" }}>{t("report.materialsBuyList")}</h3>
             <table style={{ width: "100%", borderCollapse: "collapse", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)" }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, textAlign: "left" }}>Material</th>
-                  <th style={th}>Quantity</th>
-                  <th style={{ ...th, textAlign: "left", paddingLeft: 16 }}>Unit</th>
+                  <th style={{ ...th, textAlign: "left" }}>{t("report.material")}</th>
+                  <th style={th}>{t("report.quantity")}</th>
+                  <th style={{ ...th, textAlign: "left", paddingLeft: 16 }}>{t("report.unit")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -926,7 +935,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
               </tbody>
             </table>
             <p style={{ maxWidth: 980, margin: "10px auto 0", fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.7 }}>
-              <strong>By finish:</strong>{" "}
+              <strong>{t("report.byFinish")}</strong>{" "}
               {rows.filter((r) => r.materials?.length).map((r) => (
                 // inline-block + a trailing space outside the span: each finish
                 // moves to the next line as a unit when it fits, and wraps
@@ -967,6 +976,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
 // Company edits save on every change, so an overlay-click close loses nothing;
 // onSaved bumps identityRev so the print masthead re-reads immediately.
 function ProjectInfoModal({ clientInfo = {}, onClientInfo, onSaved, onClose }) {
+  const { t } = useTranslation();
   // trade-name profiles: the picker chooses which trade name is active for
   // EDITING; the active one still mirrors to the legacy company key (backward
   // compat). Which trade name BRANDS a project is the separate per-project
@@ -1054,60 +1064,60 @@ function ProjectInfoModal({ clientInfo = {}, onClientInfo, onSaved, onClose }) {
       <div onClick={(e) => e.stopPropagation()} className="panel" style={{ width: 520, maxWidth: "100%", maxHeight: "90%", overflow: "auto", background: "var(--paper-bright)", boxShadow: "var(--shadow-2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--ink)" }}>
           <Icon name="document" size={16} />
-          <strong style={{ fontFamily: "var(--f-display)", fontSize: 15 }}>Project info</strong>
+          <strong style={{ fontFamily: "var(--f-display)", fontSize: 15 }}>{t("report.projectInfo")}</strong>
         </div>
         <div style={{ padding: 16, fontSize: 13, lineHeight: 1.6, color: "var(--ink)" }}>
-          <div style={section}>Company — your trade names, saved on this device</div>
+          <div style={section}>{t("report.companySection")}</div>
           {/* trade-name picker: choose which identity prints on the report + marked-set */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
-            <select name="trade-name" aria-label="Active trade name" value={profs.activeId || ""} onChange={(e) => switchProfile(e.target.value)}
+            <select name="trade-name" aria-label={t("report.activeTradeName")} value={profs.activeId || ""} onChange={(e) => switchProfile(e.target.value)}
               className="field-input" style={{ flex: 1, minWidth: 0 }} disabled={!profs.profiles.length}>
-              {profs.profiles.length === 0 && <option value="">No trade name yet — add one</option>}
-              {profs.profiles.map((p) => <option key={p.id} value={p.id}>{p.name || "Untitled trade name"}</option>)}
+              {profs.profiles.length === 0 && <option value="">{t("report.noTradeName")}</option>}
+              {profs.profiles.map((p) => <option key={p.id} value={p.id}>{p.name || t("report.untitledTradeName")}</option>)}
             </select>
             <button onClick={addTradeName} className="btn-ghost" title="Add another trade name (e.g. a second brand)"
-              style={{ padding: "5px 10px", whiteSpace: "nowrap" }}>+ Add</button>
+              style={{ padding: "5px 10px", whiteSpace: "nowrap" }}>{t("report.addTradeName")}</button>
             {profs.profiles.length > 1 && (
               <button onClick={deleteActive} title="Delete the selected trade name"
-                style={{ padding: "5px 10px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--c-danger)", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>Delete</button>
+                style={{ padding: "5px 10px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--c-danger)", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>{t("common.delete")}</button>
             )}
           </div>
           <label style={row}>
-            <span className="field-label">Name</span>
+            <span className="field-label">{t("report.name")}</span>
             <input name="company-name" autoComplete="organization" value={active.name || ""} onChange={(e) => editActive({ name: e.target.value })}
               placeholder="Your trade name" className="field-input" style={{ marginTop: 4 }} />
           </label>
           <label style={row}>
-            <span className="field-label">Address</span>
+            <span className="field-label">{t("report.address")}</span>
             <textarea name="company-address" autoComplete="street-address" value={active.address || ""} onChange={(e) => editActive({ address: e.target.value })}
               rows={2} placeholder={"Street\nCity, ST"} className="field-input" style={{ marginTop: 4, resize: "vertical" }} />
           </label>
           <div style={row}>
-            <span className="field-label">Logo</span>
+            <span className="field-label">{t("report.logo")}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
               <input name="company-logo" type="file" accept="image/*" onChange={onLogoFile} style={{ fontSize: 12, minWidth: 0 }} />
               {active.logo && (
                 <>
                   <img src={active.logo} alt="Company logo" style={{ width: 120, height: "auto", flex: "none", border: "1px solid var(--ink-faint)", background: "var(--well)" }} />
                   <button onClick={removeLogo}
-                    style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: 0, whiteSpace: "nowrap" }}>Remove logo</button>
+                    style={{ border: "none", background: "transparent", color: "var(--cobalt)", cursor: "pointer", fontSize: 11.5, padding: 0, whiteSpace: "nowrap" }}>{t("report.removeLogo")}</button>
                 </>
               )}
             </div>
             {logoErr && <p style={err}>{logoErr}</p>}
           </div>
-          {saveFailed && <p style={err}>Couldn't save on this device</p>}
+          {saveFailed && <p style={err}>{t("report.saveFailed")}</p>}
 
           {/* branding mode — per project. Off = OpenTakeoff (default); on brands
               the report + marked set as the selected trade name, keeping a subtle
               "Measured with OpenTakeoff" credit. Disabled until a trade name exists. */}
-          <div style={{ ...section, borderTop: "1px solid var(--ink-faint)", marginTop: 14, paddingTop: 12 }}>Branding — how this project's documents present</div>
+          <div style={{ ...section, borderTop: "1px solid var(--ink-faint)", marginTop: 14, paddingTop: 12 }}>{t("report.brandingSection")}</div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0", cursor: profs.profiles.length ? "pointer" : "not-allowed", opacity: profs.profiles.length ? 1 : 0.6 }}>
             <input type="checkbox" name="trade-name-brand" checked={brandSel.mode === "clearlabel"} disabled={!profs.profiles.length}
               onChange={(e) => setBranding({ mode: e.target.checked ? "clearlabel" : "default" })} />
             <span style={{ fontSize: 12.5 }}>
-              Trade name — brand as your company
-              {!profs.profiles.length && <span style={{ color: "var(--ink-muted)" }}> (add a trade name first)</span>}
+              {t("report.tradeNameBrand")}
+              {!profs.profiles.length && <span style={{ color: "var(--ink-muted)" }}> {t("report.addTradeNameFirst")}</span>}
             </span>
           </label>
           {brandSel.mode === "clearlabel" && profs.profiles.length > 1 && (
@@ -1119,37 +1129,37 @@ function ProjectInfoModal({ clientInfo = {}, onClientInfo, onSaved, onClose }) {
                     style={{ padding: "4px 10px", fontSize: 12, cursor: "pointer",
                       border: `1px solid ${on ? "var(--cobalt)" : "var(--ink-faint)"}`,
                       background: on ? "var(--cobalt)" : "transparent", color: on ? "var(--paper-bright)" : "var(--ink)" }}>
-                    {p.name || "Untitled trade name"}
+                    {p.name || t("report.untitledTradeName")}
                   </button>
                 );
               })}
             </div>
           )}
 
-          <div style={{ ...section, borderTop: "1px solid var(--ink-faint)", marginTop: 14, paddingTop: 12 }}>Client / job — saved with this project</div>
+          <div style={{ ...section, borderTop: "1px solid var(--ink-faint)", marginTop: 14, paddingTop: 12 }}>{t("report.clientSection")}</div>
           <label style={row}>
-            <span className="field-label">Client name</span>
+            <span className="field-label">{t("report.clientName")}</span>
             <input name="client-name" autoComplete="off" value={clientInfo.client_name || ""} onChange={client("client_name")} className="field-input" style={{ marginTop: 4 }} />
           </label>
           <label style={row}>
-            <span className="field-label">Client address</span>
+            <span className="field-label">{t("report.clientAddress")}</span>
             <textarea name="client-address" autoComplete="off" value={clientInfo.client_address || ""} onChange={client("client_address")} rows={2}
               className="field-input" style={{ marginTop: 4, resize: "vertical" }} />
           </label>
           <div style={{ display: "flex", gap: 12 }}>
             <label style={{ ...row, flex: 1 }}>
-              <span className="field-label">PO / reference</span>
+              <span className="field-label">{t("report.poReference")}</span>
               <input name="client-reference" autoComplete="off" value={clientInfo.reference || ""} onChange={client("reference")} className="field-input" style={{ marginTop: 4 }} />
             </label>
             <label style={{ ...row, flex: 1 }}>
-              <span className="field-label">Date</span>
+              <span className="field-label">{t("report.date")}</span>
               <input name="client-date" autoComplete="off" value={clientInfo.date || ""} onChange={client("date")} placeholder={'e.g. "Bid 7/12"'}
                 className="field-input" style={{ marginTop: 4 }} />
             </label>
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 16px", borderTop: "1px solid var(--ink-faint)" }}>
-          <button className="btn-primary" onClick={onClose}>Done</button>
+          <button className="btn-primary" onClick={onClose}>{t("report.done")}</button>
         </div>
       </div>
     </div>

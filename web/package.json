@@ -33,6 +33,7 @@
     "@turf/difference": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "fflate": "^0.8.3",
+    "i18next": "^26.4.2",
     "jsts": "^2.12.1",
     "onnxruntime-web": "1.26.0-dev.20260416-b7804b056c",
     "pdf-lib": "^1.17.1",
@@ -40,6 +41,7 @@
     "ppu-paddle-ocr": "6.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.15",
     "react-router": "^7.18.2"
   },
   "devDependencies": {
@@ -58,7 +60,7 @@
   "overrides": {
     "sharp": "^0.35.0",
     "adm-zip": "^0.6.1",
-    "brace-expansion": "^1.1.16",
+    "brace-expansion": "^1.1.21",
     "postcss": "^8.5.18",
     "onnxruntime-web": "$onnxruntime-web"
   }

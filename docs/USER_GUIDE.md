@@ -20,6 +20,13 @@ This manual takes you from a blank browser tab to a finished, exported takeoff, 
 
 In a hurry, or already in the app? Press **`?`** (or the **?** button in the top deck) for the in-app quick reference—the five-minute path and every key binding, without leaving the canvas. This document is the long form.
 
+**Interface language.** Use the language selector on the project screen or in
+the workspace header to switch between English and Hungarian. The choice is
+remembered by this browser and is independent of the project’s metric/imperial
+display setting. The on-screen and printed report follows the selected
+language; stable machine-readable export headings remain English in this first
+multilingual release.
+
 **Contents**
 
 1. [Five minutes to a takeoff](#1-five-minutes-to-a-takeoff)

@@ -123,6 +123,16 @@ the built-in symbol/label milestone. It comes before custom symbol libraries so
 new authored data has a durable, inspectable storage boundary instead of adding
 more browser-only state.
 
+## Interface language foundation
+
+The downstream interface now has a language-independent UI layer with English
+as the fallback catalog and Hungarian as the first additional language. The
+choice persists separately from project units and can be set per deployment
+with `VITE_DEFAULT_LANGUAGE`. Main navigation, project gates, measurement
+chrome, the condition/symbol workflow and the on-screen report are in the first
+translated slice. See [Interface languages](I18N.md) for the extension contract
+and the intentionally stable machine-export boundary.
+
 ## Open decisions
 
 Resolve these questions before implementation reaches the affected surface:
