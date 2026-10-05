@@ -29,6 +29,7 @@ import { projectIdFromUrl } from "../lib/store.js";
 import { describeConditionEdit, proposedConditionEditRows } from "../lib/proposals.js";
 import { ConditionMark } from "./ObjectMarker.jsx";
 import { formatDate, formatNumber } from "../i18n/index.js";
+import { qtyLabels, resolveNote } from "../lib/noteFields.ts";
 
 const num = (v, d = 1) => formatNumber(v, { maximumFractionDigits: d });
 const AREA_COLUMN_KEYS = new Set(["floor_sf", "wall_sf", "border_sf", "total_sf", "total_sf_net", "waste_sf"]);
@@ -94,6 +95,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
   // makes every seam_lf row read 0 — the honest answer before a layout exists.
   const seamCtx = useMemo(() => ({ seamByShape: seamLfByShape(rollByCond) }), [rollByCond]);
   const rows = useMemo(() => conditionTotals(conditions, shapes, seamCtx).filter((r) => r.shape_count > 0), [conditions, shapes, seamCtx]);
+  const noteQty = useMemo(() => qtyLabels(rows, units), [rows, units]);   // {{qty}} in the annotations table (#474)
   const bySheet = useMemo(() => sheetTotals(conditions, shapes), [conditions, shapes]);
   const g = useMemo(() => grandTotals(rows), [rows]);
   const matSummary = useMemo(() => materialsSummary(rows), [rows]);
@@ -901,7 +903,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                       </span>
                     </td>
                     <td style={{ ...td, textAlign: "left", fontFamily: "var(--f-mono)", fontSize: 11.5 }}>{sheetLabel ? sheetLabel(m.sheet_id) : m.sheet_id}</td>
-                    <td style={{ ...td, textAlign: "left", whiteSpace: "normal", width: "60%" }}>{m.text || "—"}</td>
+                    <td style={{ ...td, textAlign: "left", whiteSpace: "normal", width: "60%" }}>{resolveNote(m.text, m.condition_id, noteQty).text || "—"}</td>
                   </tr>
                 ))}
               </tbody>

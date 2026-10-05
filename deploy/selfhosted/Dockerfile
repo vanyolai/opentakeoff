@@ -9,17 +9,24 @@ FROM node:24-bookworm-slim AS builder
 WORKDIR /build
 
 COPY web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# The browser build does not need the optional Node CUDA download.
+RUN ONNXRUNTIME_NODE_INSTALL=skip npm ci --no-audit --no-fund
 
 COPY web/ ./
 
 ARG VITE_DEFAULT_LANGUAGE=en
 ENV VITE_DEFAULT_LANGUAGE=$VITE_DEFAULT_LANGUAGE
+ARG VITE_OCR=on
+ENV VITE_OCR=$VITE_OCR
 
-RUN npm run build \
+RUN npm run check:ort \
+    && npm run stage:ocr \
+    && npm run build \
+    && npm run check:ocr-dist \
     && test -s dist/index.html \
     && test -d dist/assets \
-    && test -s dist/demo/sample-finish-plan.pdf
+    && test -s dist/demo/sample-finish-plan.pdf \
+    && if [ "$VITE_OCR" != "off" ]; then test -s dist/models/ocr/manifest.json; fi
 
 
 # Only static output reaches the runtime image. Alpine is safe here because no

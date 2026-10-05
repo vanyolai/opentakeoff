@@ -15,7 +15,7 @@ carry an explicit review status. See the [Phase 1 test guide](docs/PHASE_1_TESTI
 [![Live demo](https://img.shields.io/badge/demo-opentakeoff.kentucky--ai.com-2ea44f.svg)](https://opentakeoff.kentucky-ai.com)
 [![MCP registry](https://img.shields.io/badge/MCP-io.github.Kentucky--ai%2Fopentakeoff-6f42c1.svg)](https://registry.modelcontextprotocol.io)
 [![npm](https://img.shields.io/npm/v/opentakeoff-mcp?label=opentakeoff-mcp)](https://www.npmjs.com/package/opentakeoff-mcp)
-[![Benchmark](https://img.shields.io/badge/benchmark-OpenTakeoff%20Academy-orange.svg)](https://aec.kentucky-ai.com)
+[![Benchmark](https://img.shields.io/badge/benchmark-OpenTakeoff%20Academy-orange.svg)](https://union.kentucky-ai.com)
 [![OpenArena](https://openarena.to/api/badge/cmsgykvsq0000mkuv7byhlgnl)](https://openarena.to/en/projects/cmsgykvsq0000mkuv7byhlgnl)
 [![Sponsor](https://img.shields.io/github/sponsors/Kentucky-ai?logo=githubsponsors&label=sponsor&color=EA4AAA)](https://github.com/sponsors/Kentucky-ai)
 
@@ -273,10 +273,10 @@ are the rules that make this one safe to hand a model, and why each one exists:
    fill spilled"* tells a model what to do next. A silent zero doesn't. Tools that can't answer
    withhold with a stated reason rather than returning a plausible number.
 
-### Prove it — OpenTakeoff Academy
+### Prove it — OpenTakeoff Academy / Commonwealth Agent Union
 
-[**aec.kentucky-ai.com**](https://aec.kentucky-ai.com) is a standalone open benchmark and
-certification arena for agents that do takeoff. Bring any model and your own harness; you are
+[**Commonwealth Agent Union**](https://union.kentucky-ai.com) is the home of OpenTakeoff Academy,
+its construction-agent evaluation and certification arm. Bring any model and your own harness; you are
 scored on **operating a real takeoff tool** against geometry you don't control—a wrong
 calibration yields a wrong area—not on emitting a plausible-looking number. Runs emit a
 signed bundle with full provenance of every tool call, scoring is against held-out ground truth
@@ -378,9 +378,12 @@ measurement or material data.
 A **condition** is one finish (LVP, carpet, tile, base…), carrying a line/fill color, a **CAD
 hatch pattern** so the canvas reads like the real drawing, a per-condition **waste %**, an
 **×N multiplier**, a default wall **height**, and a **thickness** that turns a linear run into
-border SF. **Import from schedule** parses the architect's finish table off the sheet into
-conditions behind a verify dialog—you approve what becomes a condition, and the product spec
-rides along as read-only report columns.
+border SF. **Import from schedule** reads the architect's finish or material table off the
+sheet (keyed by CODE, TAG, MARK or SYMBOL) into conditions behind a verify dialog—grouped by
+category, with a category guessed from a row's words flagged for review, rows the schedule
+marks NOT USED left unticked, and, on a box with a text layer, a four- or five-letter code it
+couldn't read named in a notice—and you approve what becomes a condition. The product spec,
+the schedule's remarks included, rides along as report columns.
 
 **Supporting Materials** is the layer most takeoff tools punt on: per condition, a labor type
 and a subfloor type, plus the consumables that actually go on the order—adhesive, sealer,
@@ -499,19 +502,21 @@ to Drive in the background, so the canvas is instant and survives a flaky networ
 
 <br/>
 
-OpenTakeoff can ask a vision model **you** provide to read things off the plan—starting with
-the drawn scale when a sheet's text doesn't state one (scans, rotated notes, image title
-blocks). Click **AI** in the toolbar and point it at an **OpenAI-style** endpoint (the default;
-local runtimes on your own machine speak it and need no key) or an **Anthropic-style** one,
-plus a vision-capable model id.
+The in-canvas takeoff agent runs on a vision model **you** provide: type a goal and it aims the
+app's own tools at it. Open the **Agent** panel and its AI settings, and point it at an
+**OpenAI-style** endpoint (the default; local runtimes on your own machine speak it and need no
+key) or an **Anthropic-style** one, plus a vision-capable model id.
 
-- **What's sent, and only when you click an AI button:** one snapshot of the sheet region in
-  question, plus the question—to *your* endpoint. Never the whole plan file, file names,
-  project names, or your takeoff.
-- **Nothing configured = nothing exists.** Unconfigured builds add zero UI beyond the button
-  and make zero AI network calls. No telemetry either way.
-- The answer is only ever a **suggestion**, landing in the same confirm-to-apply flow as a
-  text-detected scale, with the calibrated guide bar shown on acceptance.
+- **What's sent, and only while a run you started is going:** your goal, the prompts, and what
+  the agent's tools return, to *your* endpoint. That includes sheet names (which include the PDF
+  file name), each sheet's size and scale status, the text and schedule rows it reads, and
+  images of the sheet regions it looks at (up to a whole sheet, at most 1,024 px a side). It
+  also includes your conditions (finish tag, hatch, waste %) and the areas and perimeters it
+  measures. This list isn't complete. Never the whole plan file.
+- **Nothing configured = nothing sent.** Unconfigured builds make zero AI network calls; the
+  Agent panel only offers AI settings. No telemetry either way.
+- Shapes the agent finds are **proposals**: each one waits, dashed, until you accept it.
+  Conditions it creates are added to your list right away.
 - The key is stored in this browser's localStorage—use one you can revoke. Deployers:
   `VITE_AI_ENDPOINT` / `VITE_AI_MODEL` / `VITE_AI_PROVIDER` bake team defaults, but **never set
   `VITE_AI_KEY` on a public deploy**—Vite inlines it into the shipped bundle.
@@ -530,6 +535,7 @@ plus a vision-capable model id.
 | **Supporting Materials** | Labor + subfloor type, imperial/metric coverage rate × basis (incl. figured seam length) → rounded order quantities, trowel/roller presets, grout calculator |
 | **Roll goods** | Per-condition roll setup → lanes, seams, multi-roll splits, to-scale cuts with drag-to-reorder nesting, Roll Order LF + Rolls + figured Seam LF on every export |
 | **Multi-sheet** | Sheet gallery, tabs and side-by-side groups, Regroup, levels, **stitching across a match line**, PDF layer roles |
+| **Search and copy** | Search every sheet's text from the gallery, **Copy text** from a box or a whole sheet, and read a scanned sheet on-device (OCR, labelled wherever it's used) |
 | **Report** | Per-condition Floor/Wall/Border SF, LF, EA, SY with and without waste, plus the combined buy list; columns, grouping, saved templates |
 | **Export** | CSV, JSON, **Excel (.xlsx)**, print, **Marked Set PDF**, RFI CSV/JSON |
 | **Revisions** | Save at each bid revision, compare quantity deltas per condition/sheet/buy list, guarded restore |
@@ -630,7 +636,7 @@ The research side is run as a lab, and the receipts are the point:
 Sanitized artifacts—model cards, benchmark specs, papers—publish as they clear review:
 [Hugging Face](https://huggingface.co/Kentucky-ai) ·
 [kentucky-ai.com](https://kentucky-ai.com). The agent-side evaluation lives in
-[OpenTakeoff Academy](https://aec.kentucky-ai.com).
+[OpenTakeoff Academy](https://union.kentucky-ai.com).
 
 ---
 
@@ -767,6 +773,10 @@ instrument producing it.
 
 — Michael · [Kentucky AI](https://kentucky-ai.com)
 
+<a href="https://www.nvidia.com/en-us/startups/"><img src="docs/img/brand/nvidia-inception-program-badge.svg" alt="NVIDIA Inception Program member badge" height="40"></a>
+
+Kentucky AI is a member of the NVIDIA Inception program.
+
 **Contact:** research collaborations, data questions, press, or anything that is not a bug —
 [research@kentucky-ai.com](mailto:research@kentucky-ai.com). Bugs and feature requests go in
 [issues](https://github.com/Kentucky-ai/opentakeoff/issues); security reports follow [SECURITY.md](SECURITY.md).
@@ -794,3 +804,5 @@ references and links against source.
 ## Privacy and terms
 
 [Privacy Policy](https://opentakeoff.kentucky-ai.com/privacy/) · [Terms of Service](https://opentakeoff.kentucky-ai.com/terms/). Both are also linked in the in-app guide (`?`). The Apache-2.0 software license remains unchanged.
+
+<sub>© 2026 NVIDIA, the NVIDIA logo, and NVIDIA Inception are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries.</sub>

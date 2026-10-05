@@ -45,23 +45,41 @@ import PlanNavigator from "../components/PlanNavigator.jsx";
 import ReportPanel from "../components/ReportPanel.jsx";
 import RevisionsPanel from "../components/RevisionsPanel.jsx";
 import UserGuide from "../components/UserGuide.jsx";
+import CopyTextReceipt from "../components/CopyTextReceipt.jsx";
+import OcrDownloadNotice from "../components/OcrDownloadNotice.jsx";
+import PageReadControl, { readControlPlacement, READ_CONTROL_LEFT } from "../components/PageReadControl.jsx";
 import TakeoffsPanel, { clampPanelW, CONDITION_DND_MIME, ConditionAppearanceEditor } from "../components/TakeoffsPanel.jsx";
 import { HATCHES, PALETTE, NO_FILL, HatchPattern, HatchSwatch } from "../components/hatches.jsx";
 import { Icon } from "../brand/icons.jsx";
 import { RENDER_SCALE, MAX_GROUP, STANDARD_SCALES, parseSheetKey, compareSheetKeys, extractSheetNumber, detectScale, extractRegionText, extractTextMarks, extractDimTexts } from "../lib/sheets";
 import { joinAbuttingSpans } from "../lib/textjoin";
+import { dropFileFromIndex, indexIsScanLike } from "../lib/planIndex";
+import { labelsForFile, labelsOnFileChange, withPageLabel, withFoundLabels } from "../lib/sheetLabels";
+import { snapsToVectors } from "../lib/cursorSnap";
+import { textLayerReader, ocrCopyReaders, copyOcrRoute, readCopyText, createReadGate, boxOnPanel, copyIsScanLike, copyStartMiss, copyReaderChain, copyUnavailable, outcomeMessage, deliverCopy, makeReceipt, receiptExpires, receiptAfterEsc, receiptPlacement, RECEIPT_MS } from "../lib/copyText";
+import { putSheetIndex, createChangeSignal, ocrSheetIndex, needsTextPass } from "../lib/planSearch";
+import { createOcrSession } from "../lib/ocr/session";
+import { createConsentHost, focusAfterNotice } from "../lib/ocr/consentHost";
+import { createPageCache } from "../lib/ocr/pageCache";
+import { createPageReader, pageReadView, readSignature, backgroundRows, createReadRenderGate } from "../lib/ocr/pageRead";
+import { createDocCache, createSheetSource, readHooks, lookupHooks, readdEffects } from "../lib/ocr/sheetSource";
+import { getOcrClient } from "../lib/ocr/client";
+import { pageTextIndex } from "../lib/pageTextIndex";
 import { normalizeLoadedGroups } from "../lib/sheetGroups";
 import { isStitchKey, mintStitchId, sanitizeStitches, autoButt, stitchExtent, alignMembers, seamClips, mergePoints, mergeSegs, stitchAlive, stitchLayoutSig } from "../lib/stitches";
 import { isCanvasBusy } from "../lib/canvasBusy";
-import { parseSchedule, rowToSeed } from "../lib/scheduleParse";
-import { normalizeScanRows, postScanWithRetry, SCAN_ENDPOINT, scanRasterScale } from "../lib/scheduleScan";
+import { rowToSeed } from "../lib/scheduleRows";   // the reader (scheduleRead, which loads the sheet graph) is import()ed on use
+import { routeScheduleRead, countTextRuns, heldKeyWouldPress, EMPTY_BOX_MESSAGE, OCR_BUSY_MESSAGE, OCR_STARTING_MESSAGE, OCR_WAITING_MESSAGE, ocrReadingMessage } from "../lib/scheduleRoute";
+import { readBoxOnDevice } from "../lib/scheduleOcrRead";
+import { boxReadWords, boxTooLarge } from "../lib/ocr/boxRead";
+import { pageSpans, spansInRect, graphSpans } from "../lib/pageSpans";
 import { normalizeTag } from "../lib/scheduleEdit";
 // Condition twins — the whole inheritance rule is in lib/variants.ts (test/variants.test.ts);
 // this file only calls it from the material write paths and the condition deletes.
 import { mintTwin, variantTag,
   propagateRowPatch, propagateRowAdd, propagateRowRemove,
   markRowLocal, dropRowLocal, followFamily, splitFromFamily, promoteOnDelete } from "../lib/variants.ts";
-import { isGoogleConfigured, isSignedIn, isAllowedDomain, getAccessToken, orgDomainHint } from "../lib/google/auth.js";
+import { isGoogleConfigured } from "../lib/google/auth.js";
 import { extractVectorGeometry, buildMask, floodRegionSealed, sealRadiiFor, doorWedgeCapPx, minPassRadiusFor, oneClickRing, ringArea, MASK_MAX_DIM, MIN_PASS_FT, SENS_STRICT, SENS_BALANCED, SENS_AGGRESSIVE } from "../lib/oneclick";
 import { tidyRing, axisLockPoint } from "../lib/ringTidy";
 // The Symbol tool (#264) — the canvas face for the sweep engine. The engine,
@@ -101,6 +119,7 @@ import { ObjectMarker } from "../components/ObjectMarker.jsx";
 import { repeatPlan } from "../lib/repeatTool.js";
 import { createDragCache, sheetContentSignature, dragFilename, downloadUrlEntry } from "../lib/dragOut.js";
 import { counterRows } from "../lib/liveCounter.js";
+import { qtyLabels, resolveMarkup, FIELD_WARN_INK, FIELD_WARN_INK_DARK } from "../lib/noteFields.ts";
 import LiveCounter from "../components/LiveCounter.jsx";
 import { loadProfiles } from "../lib/identity.js";
 import { resolveBranding, loadBrandingSelection } from "../lib/branding.js";
@@ -162,9 +181,10 @@ import { getTheme, toggleTheme, onThemeChange } from "../lib/theme.js";
 // (renderBudget.test.ts covers autoRenderScale) pending a follow-up cleanup
 // pass once the tile path has proven itself in production.
 import {
-  PANEL_GAP, DETAIL_ENGAGE, DETAIL_MARGIN, MAX_CANVAS_DIM, MAX_CANVAS_AREA, SYNC_MS, GESTURE_MS, SNAP_CELL,
+  PANEL_GAP, DETAIL_ENGAGE, DETAIL_MARGIN, SYNC_MS, GESTURE_MS, SNAP_CELL,
   MEASURE_TOOLS, CUT_TOOLS, MARKUP_TOOLS, MARKUP_IDS, HL_INKS, HL_SIZES,
   MARKUP_IMG_MAX, MAX_IMAGE_MARKUP_BYTES, MARKUP_UPLOAD_MAX_BYTES, MARKUP_DECODE_MAX_AREA,
+  FLOAT_GAP, SWEEP_PANEL_W, CANVAS_EDGE, RAIL_CLEAR, ZONE_PANEL_W,
 } from "../lib/canvasConstants.js";
 import { uid, clamp, isDangerMsg, instantiateTemplate, seedConditions } from "../lib/canvasUtil.js";
 import { repairConditionMultipliers, describeMultiplierRepair } from "../lib/multiplier.js";
@@ -189,7 +209,7 @@ import { applyShapeCommand, geomSnapshot, vertsEqual, recordCommand } from "../l
 import { applyApprovalCommand, sanitizeApprovals, approvalInk, APPROVAL_R } from "../lib/approvals.js";
 import { findCutoutParent, subtractCutout, recomposeCutouts, cutRunsAcross } from "../lib/cutout.js";
 import { normalizeAgentReview } from "../lib/reviewState.js";
-import { oneClickEnabled, ONE_CLICK_GATE_MESSAGE, commandBoxEnabled } from "../lib/gate.js";
+import { oneClickEnabled, ONE_CLICK_GATE_MESSAGE, commandBoxEnabled, ocrEnabled } from "../lib/gate.js";
 import { computeShapeMetrics, needsMetrics, recalibrateShapes, linearVerticalFt } from "../lib/shapeMetrics.js";
 import { fmtCheckLen, parseLenInput, checkVerdict, M_PER_FT, areaVal, areaUnit, lenVal, lenUnit, calInputToFeet, heightVal, heightUnit, heightInputToFeet, heightStep, dimInputStr, dimLabel, volVal, volUnit } from "../lib/units";
 import * as panelGeom from "../lib/panelGeometry.js";
@@ -278,6 +298,7 @@ const TOOL_VERB = {
   schedule: "find_schedule", highlighter: "annotate", cloud: "annotate",
   callout: "annotate", text: "annotate", highlight: "annotate",
   arrow: "annotate", dimension: "annotate", stamp: "annotate", bubble: "annotate",
+  textcopy: "read_sheet_text",
 };
 
 // Pure geometry helpers (star/cloud paths, snap grid, angle lock, metrics,
@@ -328,7 +349,8 @@ export default function TakeoffCanvas() {
   // silently did nothing on prod. A direct scrollLeft write always lands.
   const scrollTabStrip = (dir) => { const el = tabStripRef.current; if (el) el.scrollLeft = Math.max(0, el.scrollLeft + dir * Math.max(160, el.clientWidth * 0.6)); };
   const [galleryLabels, setGalleryLabels] = useState({}); // sheetKey → title-block number, all files
-  const [pageLabels, setPageLabels] = useState({}); // { pageNum: "A003" } from the title block
+  const [labelsByFile, setLabelsByFile] = useState({}); // { file: { pageNum: "A003" } } from the title block
+  const pageLabels = labelsForFile(labelsByFile, active); // the active file's only: page numbers repeat across files
   const [sheetGroup, setSheetGroup] = useState([]);   // sheetKeys shown side-by-side; [] = single-sheet mode
   const [sheetLevels, setSheetLevels] = useState({}); // sheetKey → level label ("L1") — persisted (additive `sheet_levels` key); groups the gallery for multi-floor sets
   const [lastGroup, setLastGroup] = useState([]);     // most recent side-by-side composition — "Regroup" restores it
@@ -560,6 +582,21 @@ export default function TakeoffCanvas() {
   const [rules, setRules] = useState([]);
   const [ruleOffer, setRuleOffer] = useState(null);   // { deduct, seed, tag }
   const [ruleStage, setRuleStage] = useState(null);   // { rule, candidates, proposed_ts }
+  // the rule banner's measured height while it shows: the Read page text
+  // control (#471) stacks above it instead of under it
+  const ruleBannerRef = useRef(null);
+  const [ruleBannerH, setRuleBannerH] = useState(0);
+  const ruleBannerUp = !!(ruleOffer || ruleStage);
+  useLayoutEffect(() => {
+    const el = ruleBannerUp ? ruleBannerRef.current : null;
+    if (!el) { setRuleBannerH(0); return; }
+    const measure = () => setRuleBannerH(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ruleBannerUp]);
   const [agentOpen, setAgentOpen] = useState(false);      // docked right-rail Agent panel
   const [conditionDetails, setConditionDetails] = useState(true);
   const workspacePrefs = useWorkspaceLayout();
@@ -783,11 +820,60 @@ export default function TakeoffCanvas() {
   }, [commitMsgState]);
   const [showReport, setShowReport] = useState(false);  // Reports overlay (STACK-style breakdown + export)
   const [showRevisions, setShowRevisions] = useState(false); // Revisions overlay (save / compare any two, buy-list deltas, CSV, auto-banked restore)
-  const [importRows, setImportRows] = useState(null);        // Import-from-schedule approval rows (null = dialog closed)
+  const [importRead, setImportRead] = useState(null);        // Import-from-schedule approval read: { rows, skipped } (null = dialog closed)
   const [scheduleAnchor, setScheduleAnchor] = useState(null); // first marquee corner for the "schedule" tool — ISOLATED from poly so it can never leak into a measure shape
+  // The box being read: one at a time. importScheduleFromRect takes the lock
+  // for every box (a vector box only for its own short read) as `mine` =
+  // { ctl, ocr }; `ocr` is set once the box goes to the on-device reader,
+  // and while it is the canvas's window shortcuts are held (Esc cancels the
+  // read instead), so keys on the body behind a coming notice, or under the
+  // status line, act on nothing. Only the holder writes a result.
+  const ocrReadRef = useRef(null);
+  // The footer's status line: null | "starting" | "waiting" (another on-device
+  // read goes first) | "reading". Never commitMsg. ocrReadProgress: the
+  // read's last SeamProgress, for the reading line's raster count.
+  const [ocrRead, setOcrRead] = useState(null);
+  const [ocrReadProgress, setOcrReadProgress] = useState(null);
+  /** End `m`'s hold on the read, if it still has it: the lock and the line go. */
+  function releaseImportRead(m) {
+    if (ocrReadRef.current !== m) return;
+    ocrReadRef.current = null;
+    setOcrRead(null);
+    setOcrReadProgress(null);
+  }
+  /** Cancel, Esc, a sheet switch, the gallery, guide, report or revisions,
+   *  unmount: stop the read and let go at once, so nothing that can't be
+   *  stopped keeps the lock or the line. The render takes the read's signal,
+   *  so a render under way is cancelled and its canvas freed
+   *  (boxReadWords → rasterizeRegion). Recognitions never overlap: the client keeps an aborted one running until the worker
+   *  replies, and a read started right after queues behind it. Aborted while
+   *  the notice waits, the session answers this read and closes the notice;
+   *  during the download it stops the download, and the next box asks again. */
+  function cancelImportRead() {
+    const m = ocrReadRef.current;
+    if (!m) return;
+    m.ctl.abort();
+    releaseImportRead(m);
+  }
+  useEffect(() => { if (view !== "canvas" || guideOpen || showReport || showRevisions) cancelImportRead(); }, [view, guideOpen, showReport, showRevisions]); // eslint-disable-line react-hooks/exhaustive-deps
   // ── the Symbol tool (#264) — same two-click marquee idiom as schedule ─────
   const [symbolAnchor, setSymbolAnchor] = useState(null);     // first marquee corner, isolated like scheduleAnchor
   const [imageAnchor, setImageAnchor] = useState(null);       // first marquee corner for the "image" screenshot tool, isolated like scheduleAnchor/symbolAnchor
+  // ── Copy text (#471) — the same two-click marquee idiom ──────────────────
+  const [textAnchor, setTextAnchor] = useState(null);         // first marquee corner for the "textcopy" tool, isolated like scheduleAnchor/symbolAnchor
+  const [copyReceipt, setCopyReceipt] = useState(null);       // lib/copyText CopyReceipt: what went on the clipboard (null = no receipt)
+  // a written copy's receipt lives RECEIPT_MS; a refused one stays (its textarea is the only copy left)
+  useEffect(() => {
+    if (!copyReceipt || !receiptExpires(copyReceipt)) return;
+    const t = setTimeout(() => setCopyReceipt(null), RECEIPT_MS);
+    return () => clearTimeout(t);
+  }, [copyReceipt]);
+  // pdf.js page → { tc, p }: each page's text content, read once and kept, so a
+  // box (or Copy page text) on a page already read copies synchronously —
+  // inside the click's transient activation (see copyTextFrom)
+  const textContentsRef = useRef(new WeakMap());
+  const copyGateRef = useRef(null);   // lib/copyText createReadGate: a new copy read aborts the one in flight
+  if (!copyGateRef.current) copyGateRef.current = createReadGate();
   const [placingImageId, setPlacingImageId] = useState(null); // an image markup being (re)placed: it follows the cursor until the next click drops it (re-enterable from the panel, not just at capture)
   const placeGrabRef = useRef(null);                          // {key, dx, dy}: cursor→image-centre offset captured on the pointer's FIRST canvas contact during a place, so the image is grabbed where it sits (no teleport) and moves relative after
   // Cross-sheet place flag: holds the markup id when beginPlace (below) armed
@@ -833,9 +919,23 @@ export default function TakeoffCanvas() {
   const detailKeysRef = useRef(new Map());    // sheetKey → last requested crop key (per-panel render-key dedup, generalizing the old single detailKeyRef)
   const detailCancelsRef = useRef(new Map()); // sheetKey → disposer for the in-flight paintDetail call
   const renderTasksRef = useRef(new Map());  // sheetKey → pdf.js RenderTask
-  const pdfDocsRef = useRef(new Map());      // file name → pdf.js loading task (doc cache)
+  // one pdf.js document per file, cached for the life of the project view —
+  // the canvas render AND the gallery thumbnails share it. A store that
+  // hashes on demand (cloud) gets the digest of the bytes it just gave,
+  // started before pdf.js can detach them, so it never downloads them again;
+  // OCR reads pair a page with the hash of the bytes it came from (#471).
+  const [docCache] = useState(() => createDocCache({
+    load: (file) => store.loadPdfData(file),
+    open: (data) => pdfjsLib.getDocument({ data }),
+    hashing: (file) => (ocrEnabled() && typeof store.beginPdfHash === "function" ? store.beginPdfHash(file) : null),
+  }));
+  const [sheetSource] = useState(() => createSheetSource({
+    cached: docCache.cached,
+    open: docCache.open,
+    storeHash: (file) => store.pdfHash(file),
+    storeKnown: (file) => (typeof store.pdfHashIfKnown === "function" ? store.pdfHashIfKnown(file) : null),
+  }));
   const renderSeqRef = useRef(0);            // monotonic token — stale render chains bail out
-  const scanBusyRef = useRef(false);         // a paid schedule OCR read is in flight — blocks re-fire from a rapid re-draw
   const panRef = useRef(null);
   const spaceRef = useRef(false);
   const crossVRef = useRef(null);
@@ -912,7 +1012,11 @@ export default function TakeoffCanvas() {
   useEffect(() => {
     if (!workspaceLayout) return;
     const onSearchKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !e.altKey && !e.shiftKey && menuDepthRef.current === 0) {
+      const isSearch = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && !e.altKey && !e.shiftKey;
+      // held while a schedule box is read on-device — and kept from the
+      // browser's own ⌘K too, so nothing acts behind the coming notice
+      if (ocrReadRef.current?.ocr) { if (isSearch) e.preventDefault(); return; }
+      if (isSearch && menuDepthRef.current === 0) {
         if (e.target.closest?.("input, textarea, select, [contenteditable=true]")) return;
         e.preventDefault(); setWorkspaceSearchOpen(true);
       }
@@ -922,6 +1026,101 @@ export default function TakeoffCanvas() {
   }, [workspaceLayout]);
 
   const thumbCacheRef = useRef(new Map()); // sheetKey → thumbnail blob URL (lib/thumbs.js) — survives gallery close; persisted twin lives in the meta store
+  // sheetKey → SheetIndex for the gallery's plan-set search (#471). Filled by
+  // the text passes that already run for sheet numbers and scale notes (the
+  // render effect below, and the gallery's thumbnail pump), and by the
+  // gallery's own indexing walk for the rest. A ref, like thumbCacheRef: it
+  // survives gallery close. Changes are announced on a signal only the
+  // gallery listens to (at most once a frame), so an index write never
+  // re-renders the canvas, and with the gallery closed it costs nothing; the
+  // gallery reads the map fresh when it opens.
+  const planIndexRef = useRef(new Map());
+  const [indexSignal] = useState(() => createChangeSignal());
+  const notifyIndex = indexSignal.notify;
+  // store one sheet's entry (a text-layer entry replaces only a seeded one —
+  // see putSheetIndex) and re-render the gallery if the map changed
+  const onIndexed = useCallback((key, ix) => {
+    if (putSheetIndex(planIndexRef.current, key, ix)) notifyIndex();
+  }, [notifyIndex]);
+  // does the canvas hold this sheet's pdf.js page? The gallery's indexing walk
+  // gets the same shared page proxy from getPage and must not clean it up then
+  const pageHeld = useCallback((key) => pageObjsRef.current.has(key), []);
+  // On-device page reads (#471), one of each for the canvas's life. The
+  // session is the one consent path (lib/ocr/session.ts) for these reads and
+  // Import from schedule's raster read (#470, importScheduleFromRect); its
+  // notice is the OcrDownloadNotice mounted last in the tree, driven by
+  // ocrHost. The reader (lib/ocr/pageRead.ts) reads a text-less sheet (cache
+  // first), holds each sheet's read status, and feeds every read and cache
+  // hit to the search index as an OCR entry. The gallery gets all of it
+  // through `ocrApi` below.
+  const [ocrNotice, setOcrNotice] = useState(null);   // OcrDownloadNotice's { downloadBytes, progress }, or null
+  // Focus: what had it when the notice opened (captured as it opens, before
+  // Download's autoFocus takes it), restored when the notice closes;
+  // undefined while no notice is up.
+  const noticeFocusRef = useRef(undefined);
+  const [ocrHost] = useState(() => createConsentHost((v) => {
+    if (v && noticeFocusRef.current === undefined) noticeFocusRef.current = document.activeElement;
+    setOcrNotice(v);
+  }));
+  // Esc while the notice is up is the notice's Cancel, wherever focus is (on
+  // the body after a click elsewhere): it is the topmost modal, so the guide
+  // and the gallery step aside for it (lib/modalKeys otherModalOpen).
+  const noticeUp = !!ocrNotice;
+  useEffect(() => {
+    if (!noticeUp) return;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      ocrHost.cancel();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [noticeUp, ocrHost]);
+  useEffect(() => {
+    if (ocrNotice || noticeFocusRef.current === undefined) return;
+    const saved = noticeFocusRef.current;
+    noticeFocusRef.current = undefined;
+    // the gallery card whose Read opened it (its button changed under the
+    // notice), else the canvas's Read control
+    focusAfterNotice(saved, () => document.querySelector("[data-last-read] button") || document.querySelector("[data-page-read] button"))?.focus();
+  }, [ocrNotice]);
+  const [ocrSession] = useState(() => createOcrSession({ requestConsent: ocrHost.requestConsent }));
+  const [pageReader] = useState(() => createPageReader({
+    session: ocrSession,
+    cache: createPageCache({ metaGet, metaPut }),
+    onLines: (key, lines) => onIndexed(key, ocrSheetIndex(key, lines)),
+    // reads never overlap in the worker: each waits for it to be idle
+    idle: () => getOcrClient().whenIdle(),
+  }));
+  const [ocrAvail, setOcrAvail] = useState(null);      // the probe's state once asked ("available", "disabled", …), null before
+  const [textLayerByKey, setTextLayerByKey] = useState({}); // sheet key → has a text layer, i.e. isn't a scan (planIndex indexIsScanLike; set as panels render)
+  const textLayerRef = useRef(new Map());              // the same, read by the render pass so each page is checked once
+  const [readTick, setReadTick] = useState(0);         // re-render on read status changes the canvas shows
+  const readShownRef = useRef([]);                     // the sheet keys on screen (groupKeys), for the signature below
+  const [readGate] = useState(() => createReadRenderGate()); // lib/ocr/pageRead: the signature the last render drew
+  // a file's bytes are leaving or changing: forget what its pages' text
+  // layers said
+  const forgetTextLayer = useCallback((name) => {
+    for (const k of [...textLayerRef.current.keys()]) if (parseSheetKey(k).file === name) textLayerRef.current.delete(k);
+    setTextLayerByKey((m) => {
+      const keys = Object.keys(m).filter((k) => parseSheetKey(k).file === name);
+      if (!keys.length) return m;
+      const next = { ...m };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  }, []);
+  // Re-render only when what the canvas shows changes: a status of a sheet on
+  // screen, or an off-screen read starting, stopping or ending. Off-screen
+  // progress and the gallery's lookups don't touch the canvas. Compared with
+  // what the last render drew (readGate.rendered, in the render pass below),
+  // so a status some other re-render already showed doesn't hide a later
+  // change back.
+  useEffect(() => pageReader.subscribe(() => {
+    if (readGate.changed(readSignature(readShownRef.current, pageReader.status, pageReader.active()))) setReadTick((t) => t + 1);
+  }), [pageReader, readGate]);
+  useEffect(() => () => pageReader.dispose(), [pageReader]);
   const legacyPinnedRef = useRef(null);    // old `pinned` page numbers awaiting their one-shot tab migration
   const tabInitRef = useRef(false);        // snap to the first restored tab exactly once
   const statusRef = useRef("loading");     // mirror for the gallery's thumbnail worker
@@ -1130,6 +1329,8 @@ export default function TakeoffCanvas() {
   // the merged snap/mask geometry and member placement.
   const [docEpoch, setDocEpoch] = useState(0);
   const groupSig = JSON.stringify(groupKeys) + "@" + docEpoch + "|" + stitchLayoutSig(groupKeys, stitches);
+  readShownRef.current = groupKeys;
+  readGate.rendered(readSignature(groupKeys, pageReader.status, pageReader.active()));
   let _px = 0;
   const panels = groupKeys.map((key) => {
     const dims = panelImgs[key] || { w: 0, h: 0 };
@@ -1441,10 +1642,23 @@ export default function TakeoffCanvas() {
   // Free a departing file's pdf.js worker doc — the doc cache is deliberately
   // long-lived (thumbnails + reopen speed), but a file that LEFT the working
   // set would otherwise hold worker memory for the rest of the session (#302).
+  // Its search-index entries go too: the file's bytes are leaving or changing
+  // (addPdf keys on the NAME, so a revision reuses every sheet key).
   const evictDoc = useCallback((name) => {
-    const t = pdfDocsRef.current.get(name);
-    if (t) { t.then((task) => { try { task.destroy(); } catch { /* already gone */ } }).catch(() => {}); pdfDocsRef.current.delete(name); }
-  }, []);
+    docCache.evict(name);
+    if (dropFileFromIndex(planIndexRef.current, name)) notifyIndex();
+    // its OCR reads and statuses, memoized hash and text-layer flags go too
+    // (a revision reuses the sheet keys; its bytes, and so its text, differ)
+    pageReader.dropFile(name);
+    store.forgetPdfHash?.(name);
+    forgetTextLayer(name);
+    // Invariant: whatever drops a file's index entries drops its thumbnail
+    // records too (forgetPages does as well; a second forget is a no-op). A
+    // record carries the page's text-layer flag, which seeds the index on
+    // the next gallery open (planSearch seedFromThumb), so a revision must
+    // never keep the old bytes' flag.
+    forgetThumbs([name], thumbCacheRef.current);
+  }, [docCache, notifyIndex, pageReader, forgetTextLayer]);
   // Reconcile the canvas after a PDF leaves the working set. For a non-empty
   // result the [sheets] effect already prunes openTabs/sheetGroup, but it can't:
   //   • fix `active` when the CLOSED pdf was the one on screen (it never resets
@@ -1485,8 +1699,12 @@ export default function TakeoffCanvas() {
   const removeFromProject = useCallback(async (name) => {
     if (typeof store.removeFromProject !== "function") return;
     await store.removeFromProject(name);
+    // as closePdf: its pdf.js doc, index entries, OCR reads and statuses,
+    // text-layer flags, page count and thumbnail records go with it
+    evictDoc(name);
+    forgetPages([name]);
     reconcileAfterRemoval(name, await refreshSheets());
-  }, [refreshSheets, reconcileAfterRemoval]);
+  }, [refreshSheets, reconcileAfterRemoval, evictDoc, forgetPages]);
   // open dropped/picked files of any kind: PDFs, images, and .zip plan sets all
   // get turned into PDF sheets (in-browser) by ingestFiles, then stashed locally
   async function handleFiles(fileList) {
@@ -1516,17 +1734,27 @@ export default function TakeoffCanvas() {
     }
     const results = [];
     for (const f of pdfs) { try { results.push(await store.addPdf(f)); } catch (e) { setCommitMsg(`Couldn't open ${f.name}: ${e.message || e}`); } }
+    // A re-added name's search entry, OCR reads and thumbnail records (whose
+    // text-layer flag seeds the index) start over unless its bytes are known
+    // to be the same (readdEffects); a cached read goes back into the
+    // emptied slot (the textless-sheets effect looks it up again).
+    const readd = readdEffects(results.filter(Boolean), { cloud: cloudMode, loaded: (n) => docCache.has(n) });
+    for (const n of readd.reset) if (dropFileFromIndex(planIndexRef.current, n)) notifyIndex();
+    for (const n of readd.reset) pageReader.dropFile(n);
+    forgetThumbs(readd.reset, thumbCacheRef.current);
     await refreshSheets();
     // CO-1: a re-drop whose bytes CHANGED is a plan revision, not a re-open.
     // The store archived the old bytes; here the stale pdf.js docs must go
     // (docFor caches by name for the life of the view) and the render effect
-    // must re-key so the new revision actually reaches the screen.
+    // must re-key so the new revision actually reaches the screen. A cloud
+    // re-add may have changed the bytes too, and says nothing: its loaded
+    // document goes the same way.
     const revised = results.filter((r) => r?.revised);
-    if (revised.length) {
-      for (const r of revised) evictDoc(r.name);
+    if (readd.evict.length) {
+      for (const n of readd.evict) evictDoc(n);
       // a revision can change the page count — drop the cached counts so the
       // gallery re-learns them from the new bytes (#302)
-      forgetPages(revised.map((r) => r.name));
+      forgetPages(readd.evict);
       setDocEpoch((e) => e + 1);
     }
     const names = pdfs.map((f) => f.name);
@@ -1817,6 +2045,14 @@ export default function TakeoffCanvas() {
   // measure/select tool must never drop a stamp
   useEffect(() => { if (tool !== "stamp") setArmedStamp(null); }, [tool]);
   useEffect(() => { if (tool !== "image" && tool !== "pin") setImageAnchor(null); }, [tool]);   // leaving the image marquee drops a half-set anchor (mirrors scheduleAnchor/symbolAnchor reset)
+  useEffect(() => { if (tool !== "textcopy") setTextAnchor(null); }, [tool]);   // same for the Copy text marquee; the receipt outlives the tool (the second click returns to Select)
+  // Copy text armed: read the visible pages' text ahead, on arming and on every
+  // sheet switch while armed, so a box or Copy page text copies inside its click
+  useEffect(() => {
+    if (tool !== "textcopy" || status !== "ready") return;
+    for (const k of groupKeys) prefetchText(k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, groupSig, status]);
   // A One-Click proposal is only actionable while One-Click is armed (Enter
   // already requires it) — discard it on tool switch, like the stamp above.
   // Also keeps Create out of the ACTION slot while Finish occupies it, so the
@@ -1891,22 +2127,70 @@ export default function TakeoffCanvas() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // one pdf.js document per file, cached for the life of the project view —
-  // the canvas render AND the gallery thumbnails share this cache
-  // Bytes come from the local store (IndexedDB); pdf.js needs them up front, so
-  // the cache holds a PROMISE of the loading task (not the task itself).
-  const docFor = useCallback((file) => {
-    let t = pdfDocsRef.current.get(file);
-    if (!t) {
-      t = store.loadPdfData(file).then((data) => pdfjsLib.getDocument({ data }));
-      // never cache a FAILED load: a file removed and re-added under the same
-      // name (Manage → remove, then re-open) would otherwise pin the removal-
-      // race rejection for the life of the view and refuse to ever render
-      t.catch(() => { if (pdfDocsRef.current.get(file) === t) pdfDocsRef.current.delete(file); });
-      pdfDocsRef.current.set(file, t);
-    }
-    return t.then((task) => task.promise);
-  }, []);
+  // Bytes come from the store; pdf.js needs them up front (docCache above).
+  const docFor = useCallback((file) => docCache.doc(file), [docCache]);
+
+  // ── on-device page reads (#471) ─────────────────────────────────────────
+  // Read one sheet, by key, whether or not it's on screen: its page from the
+  // file's cached doc (sheetSource: the page and the hash its read is stored
+  // under come from one document), released after unless the canvas holds
+  // it. A sheet already being read joins that read.
+  const readSheet = useCallback((key, { force = false, signal } = {}) => {
+    const { file, page } = parseSheetKey(key);
+    const hooks = readHooks(sheetSource, file, page);
+    return pageReader.read({
+      key, file, page, rs: RENDER_SCALE, force, signal,
+      pdfHash: hooks.pdfHash, getPage: hooks.getPage, pageHash: hooks.pageHash,
+    }).then((r) => {
+      const opened = hooks.opened();
+      if (opened && pageObjsRef.current.get(key) !== opened) { try { opened.cleanup(); } catch { /* already released */ } }
+      if (!r.ok && (r.status === "disabled" || r.status === "uninstalled")) setOcrAvail(r.status);
+      return r;
+    });
+  }, [sheetSource, pageReader]);
+  // A sheet's cached read, if any, into the index (no page, no notice).
+  // { known: true }: only a hash already in hand (the gallery's background
+  // lookups: a cloud project downloads nothing).
+  const lookupSheet = useCallback((key, opts) => {
+    const { file, page } = parseSheetKey(key);
+    return pageReader.lookup({ key, file, page, rs: RENDER_SCALE, ...lookupHooks(sheetSource, file) }, opts);
+  }, [sheetSource, pageReader]);
+  // The probe, asked once (lib/ocr/session availability) and kept in state
+  // for the Read controls; disabled / uninstalled hide them.
+  const ocrAvailability = useCallback(() => ocrSession.availability().then((a) => { setOcrAvail(a.state); return a; }), [ocrSession]);
+  // Everything the gallery needs for its Read and its indexing walk:
+  //   enabled            VITE_OCR isn't off (else don't ask anything)
+  //   availability()     the probe (cached); resolves OcrProbe
+  //   read(key, {force, signal})  → Promise<PageReadResult>, never rejects;
+  //                      a finished read is already in the index
+  //   cancel(key)        Stopping… until the read settles
+  //   status(key)        PageReadStatus | undefined
+  //   subscribe(fn)      status changes; returns the unsubscribe
+  //   lookup(key, {known})  the cached read into the index, or null (no
+  //                      read); known: never fetch a file for the hash
+  const ocrApi = useMemo(() => ({
+    enabled: ocrEnabled(),
+    availability: ocrAvailability,
+    read: readSheet,
+    cancel: (key) => pageReader.cancel(key),
+    status: (key) => pageReader.status(key),
+    subscribe: pageReader.subscribe,
+    lookup: lookupSheet,
+  }), [ocrAvailability, readSheet, lookupSheet, pageReader]);
+  // Scans on screen (little or no text layer): the first one shown asks the probe
+  // (lazily, never at load), and each one's cached read, if any, goes into
+  // the index silently, so search works after a reload without a new read.
+  // Stitch panels aren't pages; their members aren't offered a read. It runs
+  // again on status changes too: lookup is memoized per sheet, and a file
+  // dropped from the index (re-added, removed) must look its reads up again.
+  const textlessShown = ocrEnabled() ? groupKeys.filter((k) => !isStitchKey(k) && textLayerByKey[k] === false) : [];
+  const textlessSig = textlessShown.join("\n");
+  useEffect(() => {
+    if (!textlessShown.length) return;
+    ocrAvailability().catch(() => {});
+    for (const k of textlessShown) lookupSheet(k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- textlessSig stands for textlessShown
+  }, [textlessSig, readTick, ocrAvailability, lookupSheet]);
 
   // dark toggle: repaint the base layer of every already-loaded panel at the
   // new mode (the detail effect below also depends on darkMode, so it
@@ -2111,6 +2395,18 @@ export default function TakeoffCanvas() {
         // anchors on (#320) — a mask built before they resolved was textless
         m.pageObj.getTextContent().then((tc) => {
           if (stale()) return;
+          // does the page have a text layer (#471)? At most SCAN_MAX_TEXT_LINES
+          // lines (none, or a scan's stray stamp or label): a scan or a
+          // flattened export, which Read page text can read on-device. The
+          // same entry and rule search uses, so "a scan" means one thing.
+          // Once per page (until its file's bytes change: forgetTextLayer).
+          if (!textLayerRef.current.has(m.key)) {
+            const tix = pageTextIndex(m.key, tc, m.viewport);
+            if (needsTextPass(planIndexRef.current.get(m.key))) onIndexed(m.key, tix);
+            const hasText = !indexIsScanLike(tix);
+            textLayerRef.current.set(m.key, hasText);
+            setTextLayerByKey((s) => (s[m.key] === hasText ? s : { ...s, [m.key]: hasText }));
+          }
           const det = detectScale(tc, m.viewport);
           if (det) setDetectedScales((d) => (d[m.key]?.label === det.label ? d : { ...d, [m.key]: det }));
           // positioned text for ink classification — a mask built before this
@@ -2130,11 +2426,13 @@ export default function TakeoffCanvas() {
       lead.pageObj.getTextContent().then((tc) => {
         if (stale()) return;
         const lbl = extractSheetNumber(tc, lead.viewport);
-        if (lbl) setPageLabels((m) => (m[lead.pageNum] === lbl ? m : { ...m, [lead.pageNum]: lbl }));
+        if (lbl) setLabelsByFile((m) => withPageLabel(m, active, lead.pageNum, lbl));
+        // plan-set search: the same text, at the same RENDER_SCALE viewport
+        if (needsTextPass(planIndexRef.current.get(lead.key))) onIndexed(lead.key, pageTextIndex(lead.key, tc, lead.viewport));
       }).catch(() => {});
       if (labeledFileRef.current !== active) {
         labeledFileRef.current = active;
-        setPageLabels((m) => (m[lead.pageNum] ? { [lead.pageNum]: m[lead.pageNum] } : {})); // drop other file's labels
+        setLabelsByFile((m) => labelsOnFileChange(m, active)); // drop other files' labels
         (async () => {
           const pdf = await docFor(active);
           const found = {};
@@ -2146,15 +2444,15 @@ export default function TakeoffCanvas() {
               const tc = await p2.getTextContent();
               const vp2 = p2.getViewport({ scale: RENDER_SCALE });
               const lbl = extractSheetNumber(tc, vp2);
-              if (lbl) { found[n] = lbl; if (Object.keys(found).length % 8 === 0) setPageLabels((m) => ({ ...found, ...m })); }
+              if (lbl) { found[n] = lbl; if (Object.keys(found).length % 8 === 0) setLabelsByFile((m) => withFoundLabels(m, active, found)); }
+              const key = n > 1 ? `${active}#${n}` : active;
               const det = detectScale(tc, vp2);
-              if (det) {
-                const key = n > 1 ? `${active}#${n}` : active;
-                setDetectedScales((d) => (d[key]?.label === det.label ? d : { ...d, [key]: det }));
-              }
+              if (det) setDetectedScales((d) => (d[key]?.label === det.label ? d : { ...d, [key]: det }));
+              if (stale()) return;
+              if (needsTextPass(planIndexRef.current.get(key))) onIndexed(key, pageTextIndex(key, tc, vp2));
             } catch { /* skip */ }
           }
-          if (!stale() && Object.keys(found).length) setPageLabels((m) => ({ ...found, ...m }));
+          if (!stale() && Object.keys(found).length) setLabelsByFile((m) => withFoundLabels(m, active, found));
         })();
       }
     })().catch((e) => { if (stale() || e?.name === "RenderingCancelledException") return; setErr(String(e.message || e)); setStatus("error"); });
@@ -2162,8 +2460,11 @@ export default function TakeoffCanvas() {
     // renderSeqRef invalidates in-flight renders, and cancelling the current
     // renderTasksRef set is the whole point. Copying to a variable (the rule's
     // suggestion) would cancel the stale mount-time set and leak the live one.
+    // A schedule box still being read belongs to the sheet group being left
+    // (a sheet switch, a stitch edit, a re-dropped file's docEpoch, unmount):
+    // cancel it and release its lock and status line now.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { renderSeqRef.current++; for (const [, rt] of renderTasksRef.current) { try { rt.cancel(); } catch { /* done */ } } };
+    return () => { renderSeqRef.current++; for (const [, rt] of renderTasksRef.current) { try { rt.cancel(); } catch { /* done */ } } cancelImportRead(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupSig]);
 
@@ -2277,11 +2578,10 @@ export default function TakeoffCanvas() {
   // permanently-dead pool (the failure mode an eager create/dispose effect
   // pair was observed to cause; see getCompositor's comment).
   useEffect(() => () => {
-    for (const [, t] of pdfDocsRef.current) { t.then((task) => { try { task.destroy(); } catch { /* already gone */ } }).catch(() => {}); }
-    pdfDocsRef.current.clear();
+    docCache.clear();
     try { compositorRef.current?.dispose(); } catch { /* half-built pool */ }
     compositorRef.current = null;
-  }, []);
+  }, [docCache]);
 
   // provenance deep-jump: if the URL named a sheet (?sheet=A003), jump once its page is known
   useEffect(() => {
@@ -2630,16 +2930,19 @@ export default function TakeoffCanvas() {
   // stable to capture once — no re-registration null window. isCanvasBusy is the
   // pure, unit-tested core (lib/canvasBusy.js); it must report EVERY interaction mode
   // a mid-session re-hydrate would clobber (trace/calibrate/check, One-Click review,
-  // a scheduled save, an active drag, the open text editor, an in-flight OCR scan,
-  // an agent run and its staged proposals — hydrate() wipes agentProposals and the
+  // a scheduled save, an active drag, the open text editor, an agent run and its
+  // staged proposals — hydrate() wipes agentProposals and the
   // conditions a mid-run agent minted, so both defer exactly like One-Click review).
-  busyStateRef.current = { poly, calib, check, proposal, scaleGuide, prevScale, agentRunning, agentProposals };
+  // importReading: a schedule box read on-device — a hydrate that changes
+  // groupSig would cancel the read, and an untouched download notice defers
+  // sync like One-Click's `proposal`. ocrRead is set for the whole read, the
+  // notice included; a notice opened by a page Read (#471) isn't counted.
+  busyStateRef.current = { poly, calib, check, proposal, scaleGuide, prevScale, agentRunning, agentProposals, importReading: !!ocrRead };
   const computeBusy = () => isCanvasBusy({
     ...busyStateRef.current,
     saveState: saveStateRef.current,
     dragging: !!dragRef.current || !!ocDragRef.current,
     editing: editingRef.current,
-    scanning: scanBusyRef.current,
   });
 
   // Register both reconcile handlers ONCE. onRemoteUpdate handles CASE 2: the store
@@ -2718,9 +3021,10 @@ export default function TakeoffCanvas() {
     // transition triggers. saveState catches the debounced-save clearing; idleTick
     // catches an interaction ref (drag/editor/scan) clearing with no state change.
     // agentRunning/agentProposals: the run finishing or the last proposal being
-    // accepted/rejected is a busy→idle edge that must drain a held remote.
+    // accepted/rejected is a busy→idle edge that must drain a held remote;
+    // ocrRead: a schedule box's on-device read ending is one too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [poly, calib, check, proposal, scaleGuide, prevScale, saveState, idleTick, agentRunning, agentProposals]);
+  }, [poly, calib, check, proposal, scaleGuide, prevScale, saveState, idleTick, agentRunning, agentProposals, ocrRead]);
 
   function fitToView(w, h) {
     const el = containerRef.current;
@@ -2820,10 +3124,19 @@ export default function TakeoffCanvas() {
     return () => { el.removeEventListener("wheel", onWheel); if (raf) cancelAnimationFrame(raf); };
   }, [applyTf, scheduleSync, zoomAround, promoteStage]);
 
-  // Space = temporary pan (any tool)
+  // Space = temporary pan (any tool). Held during a schedule box's on-device
+  // read, and kept from pressing a focused button (heldKeyWouldPress): on
+  // keydown, which stops the press in Chromium (checked), and on keyup too,
+  // where a button's Space press lands.
   useEffect(() => {
-    const down = (e) => { if (e.code === "Space" && !e.repeat && e.target.tagName !== "INPUT") { spaceRef.current = true; if (containerRef.current) containerRef.current.style.cursor = "grab"; } };
-    const up = (e) => { if (e.code === "Space") { spaceRef.current = false; if (containerRef.current) containerRef.current.style.cursor = ""; } };
+    const down = (e) => {
+      if (ocrReadRef.current?.ocr) { if (heldKeyWouldPress(e.key, e.target)) e.preventDefault(); return; }
+      if (e.code === "Space" && !e.repeat && e.target.tagName !== "INPUT") { spaceRef.current = true; if (containerRef.current) containerRef.current.style.cursor = "grab"; }
+    };
+    const up = (e) => {
+      if (ocrReadRef.current?.ocr && heldKeyWouldPress(e.key, e.target)) e.preventDefault();
+      if (e.code === "Space") { spaceRef.current = false; if (containerRef.current) containerRef.current.style.cursor = ""; }
+    };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   }, []);
@@ -2836,6 +3149,10 @@ export default function TakeoffCanvas() {
       if (tg === "INPUT" || tg === "SELECT" || tg === "TEXTAREA") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (menuDepthRef.current > 0) return;
+      // held while a schedule box is read on-device: ⏎, g, f, ? must not act
+      // behind (or open a dialog under) the coming download notice, and ⏎
+      // must not press a focused button either (heldKeyWouldPress)
+      if (ocrReadRef.current?.ocr) { if (heldKeyWouldPress(e.key, e.target)) e.preventDefault(); return; }
       // "?" opens the manual. Here rather than in its own listener so it
       // inherits this effect's guards — a "?" typed into a condition tag or
       // with a toolbar menu open must not pop a dialog over the work.
@@ -2951,6 +3268,7 @@ export default function TakeoffCanvas() {
       if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;   // let ⌘/Ctrl+1..9 (native tab switch) through — mirror the letter handler
       if (menuDepthRef.current > 0) return;              // a toolbar menu is open; digits are paused like the letter shortcuts
+      if (ocrReadRef.current?.ocr) return;               // held while a schedule box is read on-device
       const n = parseInt(e.key, 10);
       if (n < 1 || n > 9) return;
       const id = palette.length ? palette[n - 1] : conditions[n - 1]?.id;
@@ -2967,6 +3285,18 @@ export default function TakeoffCanvas() {
       const t = e.target.tagName;
       if (t === "INPUT" || t === "SELECT" || t === "TEXTAREA") return;
       if (viewRef.current === "gallery") return;
+      // a schedule box read on-device holds these keys; Esc cancels the read
+      // (the download notice, when it is up, takes Esc before this sees it).
+      // Esc still ends a copy read (#471) exactly when the Escape branch
+      // below would: its copy steps run only past the offer, ocSel and selVert.
+      if (ocrReadRef.current?.ocr) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancelImportRead();
+          if (!agentOfferFnsRef.current?.pending() && !ocSel && selVert == null) { setCopyReceipt(receiptAfterEsc); copyGateRef.current.begin(); }
+        }
+        return;
+      }
       if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         if (poly.length) { dropLastPoint(); }
@@ -2983,7 +3313,7 @@ export default function TakeoffCanvas() {
         // tool's points, on-screen or hidden
         else if (tool === "calibrate") { setCalib((c) => c.slice(0, -1)); }
         else if (tool === "check") { setCheck((c) => c.slice(0, -1)); }
-      } else if (e.key === "Escape") { if (agentOfferFnsRef.current?.pending()) { agentOfferFnsRef.current.dismiss(); } else if (ocSel) { setOcSel(null); } else if (selVert != null) { setSelVert(null); } else { clearPoly(); setCalib([]); setCheck([]); setCheckStated(""); setScaleGuide(null); selectShape(null); setMarkupDraft(null); setProposal(null); setArmedStamp(null); setScheduleAnchor(null); setSymbolAnchor(null); setImageAnchor(null); setPlacingImageId(null); placeGrabRef.current = null; placeCrossSheetRef.current = null; setAlignPt(null); resetZone(); hlRef.current = null; if (hlPathRef.current) hlPathRef.current.style.display = "none"; } }
+      } else if (e.key === "Escape") { if (agentOfferFnsRef.current?.pending()) { agentOfferFnsRef.current.dismiss(); } else if (ocSel) { setOcSel(null); } else if (selVert != null) { setSelVert(null); } else { clearPoly(); setCalib([]); setCheck([]); setCheckStated(""); setScaleGuide(null); selectShape(null); setMarkupDraft(null); setProposal(null); setArmedStamp(null); setScheduleAnchor(null); setSymbolAnchor(null); setImageAnchor(null); setTextAnchor(null); setCopyReceipt(receiptAfterEsc); copyGateRef.current.begin(); setPlacingImageId(null); placeGrabRef.current = null; placeCrossSheetRef.current = null; setAlignPt(null); resetZone(); hlRef.current = null; if (hlPathRef.current) hlPathRef.current.style.display = "none"; } }
       // ⌘Z: the drawing context wins — mid-trace it still pops the last placed
       // point (with or without ⇧, matching the old behavior byte-for-byte);
       // only with no trace in progress does the command stack engage
@@ -3086,12 +3416,13 @@ export default function TakeoffCanvas() {
       return;
     }
     // snapRef/angleRef are drawing-tool aids maintained by moveCrosshair, which
-    // bails for the Select tool (:1577) — so in Select they'd be STALE. Select
-    // does its own endpoint snap (ocSnap) on drop, so it always uses the raw
-    // cursor here; otherwise a stale ref freezes the drag or jumps it on grab.
-    // schedule (marquee) wants the raw cursor like select — snapping a corner to
-    // a vector vertex would shift the box off the schedule and misread the region
-    const rawCursor = tool === "select" || tool === "schedule" || tool === "image" || tool === "pin";
+    // bails for the Select tool — so in Select they'd be STALE. Select does its
+    // own endpoint snap (ocSnap) on drop, so it always uses the raw cursor here;
+    // otherwise a stale ref freezes the drag or jumps it on grab. The selection
+    // boxes want the raw cursor too: a corner snapped to a vector vertex would
+    // shift the box off what was aimed at. snapsToVectors is the one rule,
+    // shared with moveCrosshair's preview.
+    const rawCursor = !snapsToVectors(tool);
     const p = (!rawCursor && snapOn && snapRef.current) ? snapRef.current
       : (!rawCursor && angleOn && angleRef.current) ? angleRef.current
         : toImage(e.clientX, e.clientY);
@@ -3147,6 +3478,13 @@ export default function TakeoffCanvas() {
       // two-click marquee, isolated state: first click drops the anchor, second reads the box
       if (!scheduleAnchor) setScheduleAnchor(p);
       else { importScheduleFromRect(scheduleAnchor, p); setScheduleAnchor(null); setTool("select"); }
+    }
+    else if (tool === "textcopy") {
+      // Copy text (#471): the first click anchors and starts reading that
+      // page's text layer, so the second click can write the clipboard inside
+      // its own activation; the second reads the box and returns to Select
+      if (!textAnchor) { setTextAnchor(p); prefetchText(panelAt(p[0]).key); }
+      else { copyTextFromBox(textAnchor, p); setTextAnchor(null); setTool("select"); }
     }
     else if (tool === "symbol") {
       // the Symbol tool's marquee (#264): tight box around ONE instance
@@ -3212,7 +3550,8 @@ export default function TakeoffCanvas() {
       // hit size == render size at every zoom, wrapped lines included
       const ax = m.at[0] * W + ox, ay = m.at[1] * H;
       const fs = inkPx(NOTE_PT, sc);
-      const b = noteBox(ax, ay, layoutNote({ text: m.text, fontPx: fs, measure: canvasMeasure(fs) }));
+      // the RESOLVED text ({{qty}} → "5 EA") — the box the renderer actually draws
+      const b = noteBox(ax, ay, layoutNote({ text: resolveMarkup(m, noteQtyLabels).m.text, fontPx: fs, measure: canvasMeasure(fs) }));
       if (X >= b.x0 - thr && X <= b.x1 + thr && Y >= b.y0 - thr && Y <= b.y1 + thr) return true;
       if (m.type === "callout" && m.target) {
         const tx = m.target[0] * W + ox, ty = m.target[1] * H;
@@ -3509,7 +3848,10 @@ export default function TakeoffCanvas() {
     let cur = toImage(e.clientX, e.clientY);
     snapRef.current = null;
     if (snapMarkRef.current) snapMarkRef.current.style.display = "none";
-    if (snapOn && !panRef.current && snapGridsRef.current.size) {
+    // the selection boxes never snap (snapsToVectors is false for them): their
+    // crosshair and box preview show exactly the corner the click places (raw),
+    // so what's drawn is what's read — and no star or "snap" chip
+    if (snapOn && snapsToVectors(tool) && !panRef.current && snapGridsRef.current.size) {
       const sc = tfRef.current.scale;
       const sp = panelAt(cur[0]);
       const grid = snapGridsRef.current.get(sp.key);
@@ -3750,8 +4092,9 @@ export default function TakeoffCanvas() {
       const schedDraw = tool === "schedule" && scheduleAnchor;
       const symDraw = tool === "symbol" && symbolAnchor;
       const imgDraw = (tool === "image" || tool === "pin") && imageAnchor;
-      if (!panRef.current && ((tool === "rect" || tool === "deduct-rect") && poly.length === 1 || schedDraw || symDraw || imgDraw)) {
-        const a = imgDraw ? imageAnchor : symDraw ? symbolAnchor : schedDraw ? scheduleAnchor : poly[0];
+      const txtDraw = tool === "textcopy" && textAnchor;
+      if (!panRef.current && ((tool === "rect" || tool === "deduct-rect") && poly.length === 1 || schedDraw || symDraw || imgDraw || txtDraw)) {
+        const a = txtDraw ? textAnchor : imgDraw ? imageAnchor : symDraw ? symbolAnchor : schedDraw ? scheduleAnchor : poly[0];
         rectRef.current.setAttribute("x", Math.min(a[0], cur[0])); rectRef.current.setAttribute("y", Math.min(a[1], cur[1]));
         rectRef.current.setAttribute("width", Math.abs(cur[0] - a[0])); rectRef.current.setAttribute("height", Math.abs(cur[1] - a[1]));
         rectRef.current.style.display = "block";
@@ -6056,8 +6399,10 @@ export default function TakeoffCanvas() {
   // The registry (lib/agentTools.js) owns schemas/validation/whitelists; these
   // are the CAPABILITIES its tools close over — each one reads live state via
   // agentStateRef (the loop spans many awaits) and reuses the app's existing
-  // deterministic engines verbatim: the pdf.js text layer + extractRegionText,
-  // parseSchedule, the one-click flood/trace/snap pipeline, and the detail-view
+  // deterministic engines verbatim: the pdf.js text layer + extractRegionText
+  // (read_sheet_text), the pageSpans builder + the sheet graph's finish reader
+  // (read_schedule, the Import from schedule path), the one-click
+  // flood/trace/snap pipeline, and the detail-view
   // offscreen render. Nothing here writes to `shapes` — proposals stage into
   // agentProposals and only the accept gate below dispatches an `add` command.
   const AGENT_VIEW_MAX_EDGE = 1024;   // view_region crop cap (vision-model native range)
@@ -6069,7 +6414,10 @@ export default function TakeoffCanvas() {
   };
   const agentUpp = (key) => panelGeom.uppFor(agentStateRef.current.scales, renderScalesRef.current, key);
 
-  async function agentTextTokens(key, region) {
+  // The page text + the region (normalized 0..1 of the panel image, null = the
+  // whole sheet) as an image-px rect — shared by read_sheet_text and
+  // read_schedule so both read the same box.
+  async function agentPageText(key, region) {
     const p = agentPanelFor(key);
     const pageObj = pageObjsRef.current.get(key);
     if (!p || !pageObj) throw new Error(`Sheet ${key} isn't rendered yet.`);
@@ -6079,6 +6427,11 @@ export default function TakeoffCanvas() {
     const rect = region
       ? { x0: region.x0 * p.img.w, y0: region.y0 * p.img.h, x1: region.x1 * p.img.w, y1: region.y1 * p.img.h }
       : { x0: 0, y0: 0, x1: p.img.w, y1: p.img.h };
+    return { tc, vp, rs, rect, p };
+  }
+
+  async function agentTextTokens(key, region) {
+    const { tc, vp, rect, p } = await agentPageText(key, region);
     return { tokens: extractRegionText(tc, vp, rect), p };
   }
 
@@ -6089,12 +6442,18 @@ export default function TakeoffCanvas() {
     }));
   }
 
+  // Text layer only — the same spans and reader as Import from schedule's
+  // text-layer read; unlike Import, a raster box is not read on-device here.
+  // Returns the reader's ScheduleRead: { rows, skipped? } (rows may be [] when
+  // skipped codes were all the box held) or { rows: [], refused, title? }
+  // (agentTools.js words the refusal and the skipped codes for the model).
   async function agentReadSchedule(key, region) {
-    const { tokens } = await agentTextTokens(key, region);
-    return parseSchedule(tokens);   // vector path only — same parser as Import from schedule
+    const { tc, vp, rs, rect } = await agentPageText(key, region);
+    const { readScheduleSpans } = await import("../lib/scheduleRead");
+    return readScheduleSpans(graphSpans(spansInRect(pageSpans(tc.items, vp.transform, rs), rect)));
   }
 
-  // Render just the asked-for crop offscreen (the rasterizeRegion idiom) and
+  // Render just the asked-for crop offscreen (shift its top-left to (0,0)) and
   // hand back a PNG data URL — THE vision tool for scans and ambiguous areas.
   async function agentViewRegion(key, region) {
     const p = agentPanelFor(key);
@@ -6464,6 +6823,7 @@ export default function TakeoffCanvas() {
       const tg = e.target.tagName;
       if (tg === "INPUT" || tg === "SELECT" || tg === "TEXTAREA") return;
       if (menuDepthRef.current > 0) return;
+      if (ocrReadRef.current?.ocr) return;   // held while a schedule box is read on-device
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       if ((e.key || "").toLowerCase() !== "m") return;
       if (!commandBoxEnabled()) return;   // gated off the topbar (lib/gate.js): M arms nothing
@@ -6777,172 +7137,208 @@ export default function TakeoffCanvas() {
   }
   const stopAgent = () => agentAbortRef.current?.abort();
 
+  // ── Copy text (#471) ──────────────────────────────────────────────────────
+  // A box (or the whole page) → the reader chain → reading-order lines → the
+  // clipboard → the receipt. The decisions are lib/copyText's; this binds
+  // them to the live page. A page whose text content is already in hand
+  // copies synchronously, inside the click's activation (browsers may refuse
+  // a clipboard write that isn't inside a click); a first read awaits
+  // getTextContent first, and where the browser refuses the write, the
+  // receipt keeps the text in a textarea.
+  function textContentOf(pageObj) {
+    const had = textContentsRef.current.get(pageObj);
+    if (had) return had;
+    const entry = { tc: null, p: null };
+    entry.p = pageObj.getTextContent().then((tc) => { entry.tc = tc; return tc; });
+    entry.p.catch(() => textContentsRef.current.delete(pageObj));   // a failed read is retried next time
+    textContentsRef.current.set(pageObj, entry);
+    return entry;
+  }
+  function prefetchText(key) { const pg = pageObjsRef.current.get(key); if (pg) textContentOf(pg); }
+  // rect in the page's rs-viewport px; null = the whole page
+  function copyTextFrom(key, rect, scope) {
+    if (status !== "ready") { setCommitMsg("Sheet still loading — try again in a moment."); return; }
+    const pageObj = pageObjsRef.current.get(key);
+    const blocked = copyUnavailable({ stitch: isStitchKey(key), hasPage: !!pageObj });
+    if (blocked) { setCommitMsg(blocked); return; }
+    const rs = renderScalesRef.current.get(key) || RENDER_SCALE;
+    const vp = pageObj.getViewport({ scale: rs });
+    // one "has a text layer" answer: the one the Read control and search use
+    // a scan for Copy text: the page rule, and the page may hold an image (a
+    // vector cover sheet's few title lines copy from the text layer at once)
+    const imageFrac = () => sheetStatsRef.current.get(key)?.imageFrac;
+    const scanLikeOf = (tc) => copyIsScanLike(tc, vp, imageFrac());
+    // OCR known off (and no read in memory): the chain starts with that
+    // miss, asks no OCR reader, and an empty copy still says why
+    const startMiss = copyStartMiss({ enabled: ocrEnabled(), avail: ocrAvail, hasRead: !!pageReader.lines(key) });
+    const seq = renderSeqRef.current;   // a sheet switch mid-await must not post a receipt for a page you left
+    const signal = copyGateRef.current.begin();   // and a newer box (or page copy) replaces this one
+    // an on-device read posts an in-progress line (sticky, it ends in "…");
+    // whatever ends this copy takes it down again, unless a newer message
+    // has replaced it
+    let busy = null;
+    const clearBusy = () => { if (busy) { const b = busy; busy = null; setCommitMsgState((m) => (m === b ? { text: "" } : m)); } };
+    const settle = (o, tc) => {
+      clearBusy();
+      if (o.kind === "aborted" || signal.aborted) return;
+      if (o.kind !== "text") { setCommitMsg(outcomeMessage(o, scope, scanLikeOf(tc))); return; }
+      // after an on-device read the click's activation is usually gone and
+      // the write is refused: the receipt then holds the text in its textarea
+      deliverCopy(o.text, navigator.clipboard).then((ok) => setCopyReceipt(makeReceipt(o, { failed: !ok, scope, key })));
+    };
+    // a box read's line: nothing while the download notice is up, then
+    // "Waiting…" until its turn in the engine, then "Reading…"
+    const postBusy = (text) => {
+      if (!busy) signal.addEventListener("abort", clearBusy, { once: true });   // Esc, or a newer box
+      busy = { text };
+      setCommitMsgState(busy);
+    };
+    // OCR (lib/copyText): which OCR this copy may use (copyOcrRoute: none on
+    // a sheet with a text layer and no placed image), then ocrCopyReaders: the page's own
+    // read (in memory, else the cache; a read of it under way is waited for),
+    // then, only if the page has no read, an on-device read of the box, not
+    // kept; copyReaderChain puts them after the text layer, or first on a
+    // scan. Copy page text on a scan is the page read itself
+    // (readSheet: kept, indexed, shown on the Read control with its Cancel,
+    // and it goes on if this copy is replaced).
+    const ocrReadersFor = (tc) => {
+      const route = copyOcrRoute({ scope, scanLike: scanLikeOf(tc), imageFrac: imageFrac(), ocrOff: !!startMiss });
+      if (route === "none") return [];
+      return ocrCopyReaders({
+        pageLines: () => {
+          const had = pageReader.lines(key);
+          if (had) return had;
+          if (!ocrEnabled()) return null;
+          if (pageReader.status(key)?.state === "reading") return readSheet(key).then((r) => (r.ok ? r.lines : null));
+          return lookupSheet(key).then((h) => h?.lines ?? null);
+        },
+        readBox: (r, sig) => {
+          const off = !ocrEnabled() ? "disabled" : ocrAvail === "disabled" || ocrAvail === "uninstalled" ? ocrAvail : null;
+          if (off) return Promise.resolve({ ok: false, status: off });
+          if (route === "page") return readSheet(key).then((res) => (res.ok ? { ok: true, lines: res.lines } : { ok: false, status: res.status, message: res.message }));
+          // the whole page reaches OCR only on a scan, which is the page
+          // route above; a page with a text layer never gets a one-off read
+          if (!r) return Promise.resolve({ ok: true, lines: [] });
+          return pageReader.readBox({
+            file: parseSheetKey(key).file, rs, rect: r, getPage: async () => pageObj, signal: sig,
+            onPhase: (ph) => { if (!sig?.aborted) postBusy(ph === "waiting" ? "Waiting for another read…" : "Reading that box with the on-device text reader (OCR)…"); },
+          });
+        },
+      });
+    };
+    const read = (tc) => {
+      // The reader chain, asked in order; the first with any token answers:
+      // the text layer, then OCR — or, on a scan, OCR, then the text layer.
+      const failed = () => { clearBusy(); setCommitMsg("Couldn't read that region."); };
+      let out;
+      try { out = readCopyText(copyReaderChain({ scanLike: scanLikeOf(tc), textLayer: textLayerReader(tc, vp), ocr: ocrReadersFor(tc) }), rect, { signal }, [], startMiss); }
+      catch { failed(); return; }
+      if (out instanceof Promise) out.then((o) => { if (seq === renderSeqRef.current) settle(o, tc); else clearBusy(); }).catch(failed);
+      else settle(out, tc);
+    };
+    const e = textContentOf(pageObj);
+    if (e.tc) { read(e.tc); return; }
+    e.p.then((tc) => { if (seq === renderSeqRef.current && !signal.aborted) read(tc); }).catch(() => setCommitMsg("Couldn't read that sheet's text."));
+  }
+  // two stage-px corners → the box on one sheet
+  function copyTextFromBox(a, b) {
+    const pa = panelAt(a[0]);
+    const box = boxOnPanel(a, b, pa, panelAt(b[0]));
+    if ("error" in box) { setCommitMsg(box.error === "cross" ? "Draw the box within a single sheet." : "Drag a larger box around the text."); return; }
+    copyTextFrom(pa.key, box.rect, "box");
+  }
+  // arming drops the shape selection (a copy box never edits a shape)
+  function armCopyText() {
+    setTool((t) => (t === "textcopy" ? "select" : "textcopy"));
+    if (tool !== "textcopy") { selectShape(null); setTextAnchor(null); }
+  }
+
   // ── Import from schedule ────────────────────────────────────────────────────
-  // Read the marqueed box and open the approval dialog. Two paths, ONE contract
-  // (ScheduleRow[] → the same dialog):
-  //   • vector plans: the page text layer inside the box IS the extraction —
-  //     no OCR, open to everyone (parseSchedule);
-  //   • scanned plans: the box has no text tokens, so we rasterize it and hand
-  //     the PNG to the optional AI backend (/ai/parse-schedule). That path is
-  //     login-gated (see importScheduleFromScan).
+  // Read the marqueed box and open the approval dialog. Nothing leaves the
+  // device. The page's text inside the box is read first: it becomes the
+  // sheet graph's spans (pageSpans, the MCP's builder), cropped to the box,
+  // and the sheet graph's finish reader reads them (scheduleRead
+  // .readScheduleSpans, loaded on first use). scheduleRoute.ts decides what
+  // the box becomes — rows, a refusal, the re-drag hint, or, when its text
+  // holds no table and at most a few runs (a raster schedule, or an empty
+  // box), a read with the on-device OCR reader (#470): the box is read as a
+  // page read is, tiled at OCR's DPI (lib/ocr/boxRead.ts, #484; a box past
+  // the tile cap is refused before the engine starts), and its words go to
+  // the same finish reader
+  // (scheduleOcrRead.readBoxOnDevice). That read asks for the engine's
+  // download the first time (the notice), shows its status line with Cancel
+  // in the footer, and is cancelled by Cancel, Esc, a sheet switch, or the
+  // gallery, guide, report or revisions opening. One box at a time: a box drawn meanwhile is
+  // told so.
   // Corners a,b are stage px (raw cursor, snapping exempted at pointer-down).
   async function importScheduleFromRect(a, b) {
-    if (status !== "ready") { setCommitMsg("Sheet still loading — try again in a moment."); return; }
-    const panel = panelAt(a[0]);
-    if (panelAt(b[0]).key !== panel.key) { setCommitMsg("Draw the box within a single sheet, around its schedule table."); return; }
-    const pageObj = pageObjsRef.current.get(panel.key);
-    if (!pageObj) { setCommitMsg("Open a sheet first."); return; }
-    const rs = renderScalesRef.current.get(panel.key) || RENDER_SCALE;
-    const rect = { x0: a[0] - panel.xOffset, y0: a[1], x1: b[0] - panel.xOffset, y1: b[1] };
+    // The lock, taken before any await so two quick boxes can't both read.
+    if (ocrReadRef.current) { setCommitMsg(OCR_BUSY_MESSAGE); return; }
+    const mine = { ctl: new AbortController(), ocr: false };
+    ocrReadRef.current = mine;
     const seq = renderSeqRef.current;                 // a sheet switch mid-await must not pop a dialog for a page you left
-    let tokens;
+    const isCurrent = () => ocrReadRef.current === mine && !mine.ctl.signal.aborted && seq === renderSeqRef.current;
     try {
-      const vp = pageObj.getViewport({ scale: rs });
-      const tc = await pageObj.getTextContent();
-      if (seq !== renderSeqRef.current) return;
-      tokens = extractRegionText(tc, vp, rect);
-    } catch { setCommitMsg("Couldn't read that region."); return; }
-    // Vector-vs-scan decision. Tokens present ⇒ TRY the text layer first (a real
-    // vector schedule parses straight from it, no OCR cost). But token presence
-    // isn't proof of a vector page: scanned plans often carry a stray text layer
-    // (embedded OCR, a title block, dimension text) that lands in the marquee yet
-    // holds no schedule. So a token-bearing box that parses to NOTHING is not a
-    // dead end — fall through to the AI scan path when it's reachable, exactly as
-    // a truly text-less raster page would.
-    if (tokens.length) {
-      const rows = parseSchedule(tokens);
-      if (rows.length) { setImportRows(rows); return; }
-      // Parsed nothing. If the scan reader isn't reachable — not configured, not
-      // signed in, or the account is outside the org domain — the only actionable
-      // advice is to re-drag around the table header. Don't fire a paid OCR call
-      // and don't claim the page is scanned.
-      if (!isGoogleConfigured() || !isSignedIn() || !isAllowedDomain()) {
-        setCommitMsg("No schedule found in that box — drag around the finish/material schedule (its CODE / MATERIAL / … header).");
-        return;
-      }
-      // else: the reader is available — let it read the pixels below.
-    }
-    await importScheduleFromScan(pageObj, rs, rect, seq, tokens.length);
-  }
-
-  // Scan/OCR fallback for a raster page: rasterize the marqueed region and POST
-  // it to the optional AI backend, then feed the returned rows into the SAME
-  // approval dialog. LOGIN-GATED — only a Google-configured deployment with a
-  // signed-in user reaches the network (no API key ever lives in client code).
-  // tokenCount is the region's text-token count at the routing site: 0 ⇒ a true
-  // raster page (no text layer, AI is the only reader); >0 ⇒ the fallthrough from a
-  // token-bearing box whose vector parse found nothing. We report WHICH happened
-  // (#104) but never claim the >0 case is a "fixable parser gap": scanned plans
-  // routinely carry a stray text layer (title block, dimension text, embedded OCR)
-  // that lands in the marquee yet holds no schedule, so a token-bearing box that
-  // parses to nothing is just as likely a genuine scan as a defeated vector table.
-  async function importScheduleFromScan(pageObj, rs, rect, seq, tokenCount) {
-    const hadTokens = tokenCount > 0;
-    if (!isGoogleConfigured()) {
-      setCommitMsg("No schedule found — this looks like a scanned page (no text layer). Importing from scanned plans needs the AI backend.");
-      return;
-    }
-    if (!isSignedIn()) { setCommitMsg("Sign in to import from scanned plans."); return; }
-    // Org-only: a signed-in account outside the configured domain must not reach
-    // the paid reader (the server 403s it too — this just avoids the round-trip).
-    if (!isAllowedDomain()) { setCommitMsg("Your sign-in doesn't have access to the scanned-schedule reader."); return; }
-    // A paid read is already in flight — a rapid re-draw of the marquee must not
-    // fire a second Gemini call. Surface it (the first call may not have printed
-    // "Reading…" yet) so the redraw doesn't look ignored. Clears in finally below.
-    if (scanBusyRef.current) { setCommitMsg("Still reading the last schedule — one moment."); return; }
-    scanBusyRef.current = true;
-    try {
-      let png;
-      try { png = await rasterizeRegion(pageObj, rs, rect); }
-      catch { setCommitMsg("Couldn't read that region."); return; }
-      if (seq !== renderSeqRef.current) return;
-      // The token is what actually authorizes the paid read — the server verifies
-      // it before spending. A missing/expired token here means re-consent, not a
-      // silent public call.
-      let token;
-      try { token = await getAccessToken(); }
-      catch { setCommitMsg("Sign in again to import from scanned plans."); return; }
-      if (seq !== renderSeqRef.current) return;
-      setCommitMsg("Reading the scanned schedule…");
-      // #104: record WHY the paid reader was reached, right before the call fires
-      // (rasterize + token succeeded), so the log correlates 1:1 with paid reads.
-      // no-text-layer = truly raster (AI-only); text-present-unparsed = tokens were
-      // in the box but the vector parser produced nothing (NOT asserted as a parser
-      // bug — a stray-text scan is indistinguishable from a defeated vector table).
-      console.info("[schedule-import] using AI reader", {
-        reason: hadTokens ? "text-present-unparsed" : "no-text-layer",
-        tokenCount,
-      });
+      if (status !== "ready") { setCommitMsg("Sheet still loading — try again in a moment."); return; }
+      const panel = panelAt(a[0]);
+      if (panelAt(b[0]).key !== panel.key) { setCommitMsg("Draw the box within a single sheet, around its schedule table."); return; }
+      const pageObj = pageObjsRef.current.get(panel.key);
+      if (!pageObj) { setCommitMsg("Open a sheet first."); return; }
+      const rs = renderScalesRef.current.get(panel.key) || RENDER_SCALE;
+      // rect in image (rs-viewport) px, clamped to the panel as
+      // captureRegionMarkup does; the same rect is cropped and rendered
+      const cl = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+      const rect = {
+        x0: cl(Math.min(a[0], b[0]) - panel.xOffset, 0, panel.img.w), y0: cl(Math.min(a[1], b[1]), 0, panel.img.h),
+        x1: cl(Math.max(a[0], b[0]) - panel.xOffset, 0, panel.img.w), y1: cl(Math.max(a[1], b[1]), 0, panel.img.h),
+      };
+      if (!(rect.x1 - rect.x0 >= 4 && rect.y1 - rect.y0 >= 4)) { setCommitMsg(EMPTY_BOX_MESSAGE); return; }
+      let spans, pageHasText, readScheduleSpans;
       try {
-        // A cold serverless start + slow vision call can overrun Netlify's sync cap
-        // and return a 504 gateway page; the warm retry succeeds (#102). One retry
-        // only, and only on 504 — real errors (401/403/501/5xx JSON) fall through
-        // to the handling below on the first response.
-        const res = await postScanWithRetry(
-          () => fetch(SCAN_ENDPOINT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            // client_hd stamps this build's VITE_GOOGLE_HD so the server can warn if
-            // it has drifted from the runtime ALLOWED_HD (the client org-gate would
-            // then be silently no-op'ing). Diagnostic only — the server's authoritative
-            // token + ALLOWED_HD gate ignores it.
-            body: JSON.stringify({ image_b64: png.b64, width: png.width, height: png.height, client_hd: orgDomainHint() }),
-          }),
-          { onRetry: () => setCommitMsg("The reader was warming up — retrying…") },
-        );
-        if (seq !== renderSeqRef.current) return;
-        if (res.status === 401 || res.status === 403) { setCommitMsg("Your sign-in doesn't have access to the scanned-schedule reader."); return; }
-        if (res.status === 501) { setCommitMsg("Importing from scanned plans isn't enabled on this deployment."); return; }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const rows = normalizeScanRows(await res.json());
-        if (!rows.length) {
-          setCommitMsg(hadTokens
-            ? "No schedule found in that box — drag around the finish/material schedule (its CODE / MATERIAL / … header)."
-            : "No schedule found in that scanned region — the reader returned nothing.");
-          return;
-        }
-        // #104: say why the AI reader ran — honest about the token-bearing case (we
-        // read the pixels; we do NOT claim the vector parser has a bug).
-        setCommitMsg(hadTokens
-          ? `Read ${rows.length} finish${rows.length === 1 ? "" : "es"} from the image — the box had text but we couldn't read it as a table.`
-          : `Read ${rows.length} finish${rows.length === 1 ? "" : "es"} — scanned page (no text layer).`);
-        setImportRows(rows);
-      } catch { setCommitMsg("Couldn't reach the schedule reader — try again in a moment."); }
+        const vp = pageObj.getViewport({ scale: rs });
+        const tc = await pageObj.getTextContent();
+        ({ readScheduleSpans } = await import("../lib/scheduleRead"));   // the reader chunk loads on first use
+        if (!isCurrent()) return;
+        const page = pageSpans(tc.items, vp.transform, rs);
+        pageHasText = page.length > 0;   // the box's own source (pageSpans drops blank runs), so "box empty, page not" is consistent
+        spans = graphSpans(spansInRect(page, rect));
+      } catch { if (isCurrent()) setCommitMsg("Couldn't read that region."); return; }
+      const box = { textRuns: countTextRuns(spans), pageHasText };
+      const route = routeScheduleRead(readScheduleSpans(spans), box);
+      if (route.kind === "rows") { setImportRead({ rows: route.rows, skipped: route.skipped ?? [] }); return; }
+      if (route.kind === "message") { setCommitMsg(route.text); return; }
+      // On-device: the status line replaces the footer message, unless that
+      // is the stale-tab lockout or another job's in-progress "…" line.
+      mine.ocr = true;
+      setCommitMsgState((m) => (m.text === STALE_TAB_MESSAGE || (m.text || "").endsWith("…") ? m : { text: "" }));
+      setOcrRead("starting");
+      const result = await readBoxOnDevice({
+        session: ocrSession,
+        readWords: boxReadWords(pageObj, rs, rect, isCurrent),
+        tooLarge: () => boxTooLarge(pageObj, rs, rect),
+        onProgress: (p) => { if (isCurrent()) setOcrReadProgress(p); },
+        read: (ocrSpans) => readScheduleSpans(ocrSpans, { ocr: true }),   // the OCR words' blank-band section reset
+        isCurrent,
+        whenIdle: () => getOcrClient().whenIdle(),   // a page read or copy read (#471) under way goes first
+        onWaiting: () => { if (isCurrent()) setOcrRead("waiting"); },
+        onReading: () => { if (isCurrent()) setOcrRead("reading"); },
+        signal: mine.ctl.signal,
+        box,
+      });
+      if (!isCurrent()) return;
+      if (result.kind === "rows") setImportRead({ rows: result.rows, skipped: result.skipped ?? [] });
+      else if (result.kind === "message") setCommitMsg(result.text);
+    } catch {
+      if (isCurrent()) setCommitMsg("Couldn't read that region.");
     } finally {
-      scanBusyRef.current = false;
-      bumpIdle();   // scan done → let the idle-drain observe the busy→idle edge (Slice 5b)
+      releaseImportRead(mine);
     }
-  }
-
-  // Render just the marqueed region (rs-viewport px, the space rect lives in) to
-  // an offscreen canvas and return its PNG as base64 + pixel dims. Mirrors the
-  // detail-view offscreen render: shift the region's top-left to (0,0) and clamp
-  // to the single-canvas caps so a huge marquee can't exceed the backing store —
-  // AND to SCAN_MAX_DIM (scanRasterScale), the server's per-side cap, so a
-  // near-full-sheet marquee downscales to fit instead of being rejected with a
-  // 400 "invalid image dimensions". Downscales only as far as the cap, so a
-  // tighter box still goes at full resolution (better read on small schedule text).
-  async function rasterizeRegion(pageObj, rs, rect) {
-    const x0 = Math.min(rect.x0, rect.x1), y0 = Math.min(rect.y0, rect.y1);
-    const regW = Math.max(1, Math.abs(rect.x1 - rect.x0)), regH = Math.max(1, Math.abs(rect.y1 - rect.y0));
-    const factor = Math.min(1, MAX_CANVAS_DIM / regW, MAX_CANVAS_DIM / regH, Math.sqrt(MAX_CANVAS_AREA / (regW * regH)), scanRasterScale(regW, regH));
-    const bw = Math.max(1, Math.round(regW * factor)), bh = Math.max(1, Math.round(regH * factor));
-    const vp = pageObj.getViewport({ scale: rs * factor });
-    const canvas = document.createElement("canvas");
-    canvas.width = bw; canvas.height = bh;
-    await pageObj.render({
-      canvasContext: canvas.getContext("2d"),
-      viewport: vp,
-      transform: [1, 0, 0, 1, -x0 * factor, -y0 * factor],
-    }).promise;
-    const dataUrl = canvas.toDataURL("image/png");
-    return { b64: dataUrl.split(",")[1] || "", width: bw, height: bh };
   }
 
   // ── image markup (#…) — two entry points, one record type ────────────────
   // Marquee screenshot: a,b are the two marquee corners in stage px. Render the
-  // boxed region of the plan offscreen (the rasterizeRegion idiom, but with its
-  // OWN 1600px downscale factor — NOT scanRasterScale's 4096 cap) and store it as
+  // boxed region of the plan offscreen (shift its top-left to (0,0), downscaled
+  // to at most MARKUP_IMG_MAX px a side) and store it as
   // a floating `image` markup anchored at the box center. Guards mirror
   // importScheduleFromRect: sheet ready, both corners in one panel, a real source
   // page (refuse a stitched composite), a non-degenerate box.
@@ -6962,7 +7358,7 @@ export default function TakeoffCanvas() {
     const y1 = cl(Math.max(a[1], b[1]), 0, panel.img.h);
     const regW = x1 - x0, regH = y1 - y0;
     if (!(regW >= 4 && regH >= 4)) { setCommitMsg("Drag a larger box to capture."); return; }
-    // own downscale factor: 1600px longest side (never scanRasterScale's 4096)
+    // downscale to MARKUP_IMG_MAX (1600px) on the longest side
     const factor = Math.min(1, MARKUP_IMG_MAX / regW, MARKUP_IMG_MAX / regH);
     const bw = Math.max(1, Math.round(regW * factor)), bh = Math.max(1, Math.round(regH * factor));
     let src;
@@ -7143,7 +7539,7 @@ export default function TakeoffCanvas() {
     } catch { setCommitMsg("Couldn't read that image."); }
   }
 
-  // Approved rows → conditions. Category drives color/hatch/waste (rowToSeed);
+  // Approved rows → conditions. Category drives hatch/waste, the palette the color (rowToSeed);
   // product spec (mfr/style/color/size) rides a plain `spec` field — NOT custom
   // columns (would hijack a user column and pollute its grouping vocabulary) and
   // NOT materials[] (those are coverage buy-list items, no coverage rate here).
@@ -7164,7 +7560,7 @@ export default function TakeoffCanvas() {
       });
       existing.add(tag);
     }
-    setImportRows(null);
+    setImportRead(null);
     if (!made.length) { setCommitMsg("Those finishes already exist as conditions."); return; }
     setConditions((cs) => [...cs, ...made]);
     activateCondition(made[0].id, { reassign: false });
@@ -7423,6 +7819,9 @@ export default function TakeoffCanvas() {
   // exist only in the Report/exports). Same conditionTotals rules, no filter.
   const projRows = useMemo(() => conditionTotals(conditions, shapes, seamCtx), [conditions, shapes, seamCtx]);
   const projRowById = useMemo(() => new Map(projRows.map((r) => [r.id, r])), [projRows]);
+  // {{qty}} in a note (#474) — the linked condition's measured quantity,
+  // whole project, in the display unit system. Resolved at draw time only.
+  const noteQtyLabels = useMemo(() => qtyLabels(projRows, units), [projRows, units]);
   // ── load-time quantity heal (#137) ─────────────────────────────────────────
   // A shape can ARRIVE without the numbers its role requires (an import that
   // carried geometry only). Such a shape draws fine but reads as 0 SF in
@@ -7875,10 +8274,11 @@ export default function TakeoffCanvas() {
   }
   const annotations = useAnnotationWorkbench({
     tool, setTool, panels, tf: tfRef, zoom: tf.scale, toImage, spaceRef,
-    markups, selectedId: selectedMarkupId, setSelectedId: setSelectedMarkupId,
+    markups, selectedId: selectedMarkupId, setSelectedId: setSelectedMarkupId, activeCondition: activeCond,
     commit: commitAnnotationBatch, message: setCommitMsg, ready: status === "ready",
     storageKey: "opentakeoff_annotation_favorites_v1", visible: showMarkups,
     compact: workspaceLayout, onMenuDepth,
+    keysHeld: () => !!ocrReadRef.current?.ocr,   // its Delete/Esc/⌘Z wait out a schedule box's on-device read, like the canvas's own keys
     legacyTools: { highlighter: "highlighter", cloud: "cloud", callout: "callout" },
     resetDraft: () => { leaveCanvas(); setMarkupDraft(null); },
     readText: async key => {
@@ -8115,6 +8515,7 @@ export default function TakeoffCanvas() {
     ...MEASURE_TOOLS.filter((toolDef) => toolDef.id !== "oneclick" || oneClickEnabled()).concat(CUT_TOOLS).map((toolDef) => ({ id: `tool-${toolDef.id}`, label: t(`tools.${toolDef.id === "deduct-rect" ? "deductRect" : toolDef.id}`, { defaultValue: toolDef.label }), shortcut: toolDef.shortcut, group: t("canvas.edit"), run: () => { setView("canvas"); setTool(toolDef.id); } })),
     { id: "select", label: t("tools.select"), group: t("canvas.edit"), shortcut: "V", run: () => setTool("select") },
     { id: "zone", label: t("tools.zone"), group: t("canvas.aids"), run: () => { setView("canvas"); setTool("zone"); } },
+    { id: "textcopy", label: t("tools.copyTextTitle"), group: t("canvas.aids"), run: () => { setView("canvas"); if (tool !== "textcopy") armCopyText(); } },
     { id: "undo", label: t("canvas.undo"), group: t("canvas.edit"), shortcut: "⌘Z", run: () => poly.length ? dropLastPoint() : undoShapeCommand() },
     { id: "redo", label: t("canvas.redo"), group: t("canvas.edit"), shortcut: "⇧⌘Z", run: redoShapeCommand },
     { id: "finish", label: t("canvas.finish", { count: poly.length }), group: t("canvas.edit"), shortcut: "↵", disabled: !finishOk, run: finishShape },
@@ -8572,6 +8973,14 @@ export default function TakeoffCanvas() {
         </div>
       )}
 
+      {/* Copy text prompt (#471) — the calibrate/check prompt-bar idiom */}
+      {tool === "textcopy" && (
+        <div style={{ padding: "8px 14px", background: "var(--paper-bright)", borderBottom: "1px solid var(--hairline-warm)", fontSize: 14, display: "flex", alignItems: "center", gap: "var(--sp-3)" }}>
+          <span>Copy text: click two corners around the text ({textAnchor ? 1 : 0}/2). Rotated runs are left out and counted.</span>
+          <button type="button" className="btn-ghost" onClick={() => copyTextFrom(focusPanel.key, null, "page")}>Copy page text</button>
+        </div>
+      )}
+
       {/* calibration prompt */}
       {tool === "calibrate" && (
         <div style={{ padding: "8px 14px", background: "var(--paper-bright)", borderBottom: "1px solid var(--hairline-warm)", fontSize: 14 }}>
@@ -8687,6 +9096,8 @@ export default function TakeoffCanvas() {
              path), so the mark means a person looked. */}
          {railTile("approve", "approve", t("tools.approveTitle"), null,
            () => setTool((t) => (t === "approve" ? "select" : "approve")), { tint: tool === "approve" ? "var(--c-positive)" : undefined, armed: tool === "approve" })}
+         {railLabel(t("tools.groupRead"))}
+         {railTile("textcopy", "copyText", t("tools.copyTextTitle"), null, armCopyText)}
          {railLabel(t("tools.groupCalibrate"))}
          {railTile("calibrate", "calibrate", t("tools.calibrateTitle"), null)}
        </nav>
@@ -8746,7 +9157,12 @@ export default function TakeoffCanvas() {
                            onBlur={(e) => { updateMarkup(m.id, { text: e.currentTarget.value.trim() }); setPanelEditId(null); }}
                            style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: "1px 4px", border: "1px solid var(--cobalt)", borderRadius: 0, outline: "none" }} />
                        ) : (
-                         <span style={{ flex: 1, color: "var(--ink)" }}>{m.type === "svg" ? <em style={{ color: "var(--ink-muted)" }}>(vector symbol)</em> : ([m.type === "dimension" && Number(m.len_ft) > 0 ? dimLabel(m.len_ft) : "", m.text].filter(Boolean).join(" · ") || <em style={{ color: "var(--ink-muted)" }}>(no text)</em>)}</span>
+                         (() => {
+                           // shown resolved ({{qty}} → "5 EA", #474); the edit box keeps the template
+                           const rm = resolveMarkup(m, noteQtyLabels);
+                           const warn = rm.unresolved.length > 0;
+                           return <span title={warn ? `Can't fill ${rm.unresolved.join(", ")}: link this note to a condition that has a quantity` : (rm.m !== m ? m.text : undefined)} style={{ flex: 1, color: warn ? "var(--c-danger)" : "var(--ink)" }}>{m.type === "svg" ? <em style={{ color: "var(--ink-muted)" }}>(vector symbol)</em> : ([m.type === "dimension" && Number(m.len_ft) > 0 ? dimLabel(m.len_ft) : "", rm.m.text].filter(Boolean).join(" · ") || <em style={{ color: "var(--ink-muted)" }}>(no text)</em>)}</span>;
+                         })()
                        )}
                        {m.type !== "svg" && <button onClick={(e) => { e.stopPropagation(); setPanelEditId((id) => (id === m.id ? null : m.id)); }} title="Edit text" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-muted)" }}>✎</button>}
                        <button onClick={(e) => { e.stopPropagation(); deleteMarkup(m.id); }} title="Delete markup" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--c-danger)" }}>🗑</button>
@@ -9205,7 +9621,10 @@ export default function TakeoffCanvas() {
                       // and tier 2 last/on top; hit-test ranks them in reverse, so the
                       // topmost-drawn markup is the one a click selects.
                       .slice().sort((a, b) => (a.type === "image" ? 0 : a.type === "highlight" ? 1 : 2) - (b.type === "image" ? 0 : b.type === "highlight" ? 1 : 2))
-                      .map((m) => {
+                      .map((m0) => {
+                      // fields resolve before anything reads the text, Premium ink included;
+                      // an unresolved field leaves the literal in place and tints the note
+                      const { m, unresolved: mUnres } = resolveMarkup(m0, noteQtyLabels);
                       const premiumInk = annotations.render(m, p);
                       if (premiumInk) {
                         const at=m.at||m.from||m.rect?.[0]||m.pts?.[0]||m.quads?.[0]?.[0];
@@ -9220,6 +9639,10 @@ export default function TakeoffCanvas() {
                       const mCond = m.condition_id ? condById[m.condition_id] : null;
                       const base = m.color || mCond?.color || (m.rfi_id ? "#1f3fc7" : "#c47a10");
                       const mk = darkMode ? boostForDark(base) : base;   // literal — SVG attrs don't resolve CSS vars
+                      // a note quoting a field that can't resolve reads in the danger ink;
+                      // note blocks sit on a white backing in both themes, labels on the sheet
+                      const labelInk = mUnres.length ? (darkMode ? FIELD_WARN_INK_DARK : FIELD_WARN_INK) : mk;
+                      const noteInk = mUnres.length ? FIELD_WARN_INK : "#0e1a2e";
                       const dash = dashArrayFor(m.line_style || "solid", z);
                       const w = clampWeight(m.weight);   // stroke-width multiplier over each element's base, default ×1
                       const selM = m.id === selectedMarkupId;
@@ -9284,7 +9707,7 @@ export default function TakeoffCanvas() {
                           <g key={m.id}>
                             {halo(hx0 - pad, hy0 - pad, hx1 + pad, hy1 + pad)}
                             <rect x={hx0} y={hy0} width={hx1 - hx0} height={hy1 - hy0} fill={mk} fillOpacity={0.18} stroke={mk} strokeWidth={(2 * w) / z} strokeDasharray={dash} />
-                            {m.text && <text x={(hx0 + hx1) / 2} y={(hy0 + hy1) / 2} fill={mk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
+                            {m.text && <text x={(hx0 + hx1) / 2} y={(hy0 + hy1) / 2} fill={labelInk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
                             {badge(hx0, hy0 - pad - 9 / z)}
                           </g>
                         );
@@ -9298,7 +9721,7 @@ export default function TakeoffCanvas() {
                           <g key={m.id}>
                             {halo(bx0, by0, bx1, by1)}
                             <path d={cloudPath(c0[0] * p.img.w, c0[1] * p.img.h, c1[0] * p.img.w, c1[1] * p.img.h)} fill="none" stroke={mk} strokeWidth={(2 * w) / z} strokeDasharray={dash} />
-                            {m.text && <text x={(c0[0] + c1[0]) / 2 * p.img.w} y={(c0[1] + c1[1]) / 2 * p.img.h} fill={mk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
+                            {m.text && <text x={(c0[0] + c1[0]) / 2 * p.img.w} y={(c0[1] + c1[1]) / 2 * p.img.h} fill={labelInk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
                             {badge(bx0, by0 - 9 / z)}
                             {revTri(bx1, by0 - 9 / z)}
                           </g>
@@ -9321,7 +9744,7 @@ export default function TakeoffCanvas() {
                             <path d={arrowheadPath(AX, AY, tx * p.img.w, ty * p.img.h, 9 / z)} fill={mk} />
                             {L.lines.length > 0 && <rect x={b.x0} y={b.y0} width={L.w} height={L.h} fill="rgba(255,255,255,.92)" stroke={mk} strokeWidth={(1 * w) / z} strokeDasharray={dash} />}
                             {L.lines.length > 0 && (
-                              <text fill="#0e1a2e" fontSize={fs} fontWeight="600" fontFamily={NOTE_FONT_FAMILY} style={{ pointerEvents: "none" }}>
+                              <text fill={noteInk} fontSize={fs} fontWeight="600" fontFamily={NOTE_FONT_FAMILY} style={{ pointerEvents: "none" }}>
                                 {L.lines.map((ln, i) => <tspan key={i} x={AX} y={lineBaseline(AY, L, i)}>{ln || "\u00a0"}</tspan>)}
                               </text>
                             )}
@@ -9341,7 +9764,7 @@ export default function TakeoffCanvas() {
                             <line x1={fx} y1={fy} x2={tx} y2={ty} stroke={mk} strokeWidth={(2 * w) / z} strokeDasharray={dash} strokeLinecap="round" />
                             {/* filled arrowhead at the `to` end */}
                             <path d={arrowheadPath(fx, fy, tx, ty, 11 / z)} fill={mk} />
-                            {m.text && <text x={midx} y={midy - inkPx(LABEL_PT, z) * 0.6} fill={mk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
+                            {m.text && <text x={midx} y={midy - inkPx(LABEL_PT, z) * 0.6} fill={labelInk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
                             {badge(hx0, hy0 - pad - 9 / z)}
                           </g>
                         );
@@ -9365,7 +9788,7 @@ export default function TakeoffCanvas() {
                             <line x1={fx} y1={fy} x2={tx} y2={ty} stroke={mk} strokeWidth={(2 * w) / z} strokeDasharray={dash} />
                             <line x1={fx - dnx * tick} y1={fy - dny * tick} x2={fx + dnx * tick} y2={fy + dny * tick} stroke={mk} strokeWidth={(2 * w) / z} />
                             <line x1={tx - dnx * tick} y1={ty - dny * tick} x2={tx + dnx * tick} y2={ty + dny * tick} stroke={mk} strokeWidth={(2 * w) / z} />
-                            {dimText && <text x={(fx + tx) / 2 + dnx * (inkPx(LABEL_PT, z) * 0.9)} y={(fy + ty) / 2 + dny * (inkPx(LABEL_PT, z) * 0.9)} fill={mk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{dimText}</text>}
+                            {dimText && <text x={(fx + tx) / 2 + dnx * (inkPx(LABEL_PT, z) * 0.9)} y={(fy + ty) / 2 + dny * (inkPx(LABEL_PT, z) * 0.9)} fill={labelInk} fontSize={inkPx(LABEL_PT, z)} fontWeight="700" fontFamily={NOTE_FONT_FAMILY} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{dimText}</text>}
                             {badge(hx0, hy0 - pad - 9 / z)}
                           </g>
                         );
@@ -9378,7 +9801,7 @@ export default function TakeoffCanvas() {
                           <g key={m.id}>
                             {halo(cx - rad - pad, cy - rad - pad, cx + rad + pad, cy + rad + pad)}
                             <circle cx={cx} cy={cy} r={rad} fill={darkMode ? "rgba(12,15,20,.85)" : "rgba(255,255,255,.85)"} stroke={mk} strokeWidth={(2 * w) / z} strokeDasharray={dash} />
-                            {m.text && <text x={cx} y={cy} fill={mk} fontSize={Math.min(13, rad * z * 0.9) / z} fontWeight="700" textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
+                            {m.text && <text x={cx} y={cy} fill={labelInk} fontSize={Math.min(13, rad * z * 0.9) / z} fontWeight="700" textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: "none" }}>{m.text}</text>}
                             {badge(cx + rad, cy - rad - 4 / z)}
                           </g>
                         );
@@ -9469,7 +9892,7 @@ export default function TakeoffCanvas() {
                           {halo(b.x0 - 2 / z, b.y0 - 2 / z, b.x1 + 2 / z, b.y1 + 2 / z)}
                           {L.lines.length > 0 && <rect x={b.x0} y={b.y0} width={L.w} height={L.h} fill="rgba(255,247,237,.92)" stroke={mk} strokeWidth={(1 * w) / z} strokeDasharray={dash} />}
                           {L.lines.length > 0 && (
-                            <text fill="#0e1a2e" fontSize={fs} fontWeight="600" fontFamily={NOTE_FONT_FAMILY} style={{ pointerEvents: "none" }}>
+                            <text fill={noteInk} fontSize={fs} fontWeight="600" fontFamily={NOTE_FONT_FAMILY} style={{ pointerEvents: "none" }}>
                               {L.lines.map((ln, i) => <tspan key={i} x={AX} y={lineBaseline(AY, L, i)}>{ln || "\u00a0"}</tspan>)}
                             </text>
                           )}
@@ -9705,7 +10128,7 @@ export default function TakeoffCanvas() {
                   fill; rect & symbol marquees are measure tools, themed via DS. */}
               {(() => {
                 const rectDeduct = tool === "deduct" || tool === "deduct-rect";
-                const rectNeutral = tool === "schedule";   // selection gesture, not measurement — never themed
+                const rectNeutral = tool === "schedule" || tool === "textcopy";   // selection gestures, not measurement — never themed
                 return <rect ref={rectRef}
                   fill={rectDeduct ? "rgba(176,58,38,.22)" : rectNeutral ? shapeFill(aCond) : draftFill}
                   stroke={rectDeduct ? "#b03a26" : rectNeutral ? "#1f3fc7" : DS.accent}
@@ -9935,6 +10358,28 @@ export default function TakeoffCanvas() {
             <button onClick={() => toggleFocusMode()} title={focusMode ? "Focus off — show all chrome (F)" : "Focus — trade chrome for canvas height (F)"}
               style={{ width: 34, height: 34, borderRadius: 0, border: `1px solid ${focusMode ? "var(--cobalt)" : "var(--ink-faint)"}`, background: focusMode ? "var(--cobalt)" : "var(--paper-bright)", color: focusMode ? "var(--accent-contrast)" : "var(--ink)", cursor: "pointer", fontSize: 13 }}>⛶</button>
           </div>
+
+          {/* Read page text (#471) — beside the corner cluster, above the
+              status bar (and above the rule banner while one shows): one row
+              per scan on screen (little or no text layer; named in a group), and a
+              Cancel row for a read still running on a sheet that left the
+              screen. Same press handling as the cluster. */}
+          <div onPointerDown={(e) => { if (e.button === 0 && !spaceRef.current) e.stopPropagation(); }} onDoubleClick={(e) => e.stopPropagation()}
+            style={{ ...readControlPlacement({ bannerHeight: ruleBannerH }), zIndex: Z.canvasUi, maxWidth: `calc(100% - ${READ_CONTROL_LEFT + CANVAS_EDGE}px)` }}>
+            <PageReadControl
+              rows={[
+                ...panels.filter((p) => !isStitchKey(p.key)).map((p) => ({
+                  key: p.key,
+                  label: labelFor(p),
+                  view: pageReadView({ textless: textLayerByKey[p.key] === undefined ? undefined : !textLayerByKey[p.key], avail: ocrAvail, status: pageReader.status(p.key) }),
+                })),
+                ...backgroundRows(pageReader.active(), groupKeys, tabLabel).map((r) => ({ ...r, background: true })),
+              ]}
+              onRead={(key) => { readSheet(key); }}
+              onReadAgain={(key) => { readSheet(key, { force: true }); }}
+              onCancel={(key) => pageReader.cancel(key)}
+              onRetry={() => { ocrAvailability().catch(() => {}); }} />
+          </div>
         </div>
 
         {/* correction-rule banner (#88): offer after a qualifying Cut Out, then
@@ -9942,7 +10387,7 @@ export default function TakeoffCanvas() {
             transient commitMsg text lives in the status bar now); Dismiss/
             Cancel are always one click — a rule is never applied silently. */}
         {(ruleOffer || ruleStage) && (
-        <div style={{ position: "absolute", left: "50%", bottom: 14, transform: "translateX(-50%)", zIndex: Z.canvasUi, display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, maxWidth: "82%", pointerEvents: "none" }}>
+        <div ref={ruleBannerRef} style={{ position: "absolute", left: "50%", bottom: 14, transform: "translateX(-50%)", zIndex: Z.canvasUi, display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, maxWidth: "82%", pointerEvents: "none" }}>
         {(ruleOffer || ruleStage) && (
           <div style={{ pointerEvents: "auto", display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "var(--paper-bright)", border: "1.5px dashed var(--c-danger)", boxShadow: "var(--shadow-1)", fontSize: 12.5, color: "var(--ink)", maxWidth: "100%" }}>
             {ruleOffer ? (<>
@@ -10016,7 +10461,7 @@ export default function TakeoffCanvas() {
           // phones: a bottom strip — the top-right box plus the panel rail was
           // covering the entire screen. bottom:64 clears the bottom-center toast.
           ? { left: 10, right: 10, bottom: 64, maxHeight: "36%", padding: "8px 12px" }
-          : { right: 56, top: 14, minWidth: 200, maxWidth: 260, maxHeight: "calc(100% - 28px)", padding: "12px 16px" }),
+          : { right: RAIL_CLEAR, top: CANVAS_EDGE, minWidth: 200, maxWidth: 260, maxHeight: `calc(100% - ${2 * CANVAS_EDGE}px)`, padding: "12px 16px" }),
           background: "var(--paper-bright)", border: "1px solid var(--ink-faint)", borderRadius: 0, overflowY: "auto", boxShadow: "var(--shadow-pop)", fontVariantNumeric: "tabular-nums", zIndex: Z.canvasUi }}>
           <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.55, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tool === "zone" ? "Zone check" : (aCond?.finish_tag || "No condition")}</div>
           {tool === "oneclick" && proposal?.regions.length ? (() => {
@@ -10198,8 +10643,17 @@ export default function TakeoffCanvas() {
             the live readout (right:14, top:14, zIndex 6) shows the SAME zone's
             live "SF in zone" figure for the NEXT trace while this panel is open,
             and a top:14 placement here covered all but a ~42px sliver of it. */}
+        {/* Copy text receipt (#471) — in the canvas, bottom-right below the live
+            readout like the zone panel, moved left of the Sweep panel while a
+            sweep is live (lib/copyText receiptPlacement) */}
+        {copyReceipt && (
+          <CopyTextReceipt receipt={copyReceipt} placement={receiptPlacement({ sweepOpen: !!sweep, zoneOpen: !!zoneRows, narrow: isNarrow })}
+            onClose={() => setCopyReceipt(null)}
+            onCopyPage={(key) => copyTextFrom(key, null, "page")}
+            onCopied={() => setCopyReceipt((r) => (r ? { ...r, failed: false } : r))} />
+        )}
         {zoneRows && (
-          <div style={{ position: "absolute", right: 56, bottom: 14, width: 300, maxHeight: "calc(100% - 28px)", overflowY: "auto", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)", borderRadius: 0, boxShadow: "0 6px 22px rgba(0,0,0,.16)", zIndex: 7, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+          <div style={{ position: "absolute", right: RAIL_CLEAR, bottom: CANVAS_EDGE, width: ZONE_PANEL_W, maxHeight: `calc(100% - ${2 * CANVAS_EDGE}px)`, overflowY: "auto", background: "var(--paper-bright)", border: "1px solid var(--ink-faint)", borderRadius: 0, boxShadow: "0 6px 22px rgba(0,0,0,.16)", zIndex: 7, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderBottom: "1px solid var(--ink-faint)" }}>
               <b style={{ fontSize: 12.5 }}>Zone check</b>
               <span style={{ fontFamily: "var(--f-mono)", fontSize: 9.5, color: "var(--ink-muted)" }}>nothing saved</span>
@@ -10386,6 +10840,8 @@ export default function TakeoffCanvas() {
           onLabel={(k, lbl) => setGalleryLabels((m) => (m[k] === lbl ? m : { ...m, [k]: lbl }))}
           onDetect={(k, det) => setDetectedScales((d) => (d[k]?.label === det.label ? d : { ...d, [k]: det }))}
           thumbCacheRef={thumbCacheRef} busyRef={statusRef}
+          planIndexRef={planIndexRef} subscribeIndex={indexSignal.subscribe} onIndexed={onIndexed} pageHeld={pageHeld} docLoaded={docCache.has}
+          ocr={ocrApi}
           openTabs={openTabs} onOpen={openSheets}
           stitches={stitches} onStitch={createStitch} onOpenStitch={openStitch} onDeleteStitch={deleteStitch}
           onAddFiles={handleFiles}
@@ -10408,13 +10864,13 @@ export default function TakeoffCanvas() {
         />
       )}
 
-      {importRows && (
+      {importRead && (
         <ImportSchedulePanel
-          rows={importRows}
+          rows={importRead.rows} skipped={importRead.skipped}
           existing={new Set(conditions.map((c) => normalizeTag(c.finish_tag)))}
           palette={PALETTE} startIndex={conditions.length}
           onCreate={createFromSchedule}
-          onClose={() => setImportRows(null)}
+          onClose={() => setImportRead(null)}
         />
       )}
 
@@ -10484,7 +10940,7 @@ export default function TakeoffCanvas() {
         const commitN = (sweep.includeSeed ? 1 : 0) + matchN + accQ;
         const unlabeled = (seedTag || sweep.matches.some((m) => m.label)) ? sweep.matches.filter((m) => !m.label).length : 0;
         return (
-          <div style={{ position: "fixed", right: 12, top: "calc(var(--topbar-h) + 12px)", width: 288, zIndex: Z.popover, background: "var(--paper-cream)", border: "1px solid var(--ink-faint)", boxShadow: "var(--shadow-pop)", display: "flex", flexDirection: "column", fontSize: "var(--fs-m)" }}>
+          <div style={{ position: "fixed", right: FLOAT_GAP, top: `calc(var(--topbar-h) + ${FLOAT_GAP}px)`, width: SWEEP_PANEL_W, zIndex: Z.popover, background: "var(--paper-cream)", border: "1px solid var(--ink-faint)", boxShadow: "var(--shadow-pop)", display: "flex", flexDirection: "column", fontSize: "var(--fs-m)" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "10px 12px", borderBottom: "1px solid var(--ink-faint)" }}>
               <span className="field-label">SYMBOL SWEEP</span>
               <span style={{ flex: 1 }} />
@@ -10562,6 +11018,15 @@ export default function TakeoffCanvas() {
             {commitMsg}
           </span>
         )}
+        {/* Import from schedule's on-device read: its own live line, never
+            commitMsg (which ellipsizes), and hidden while the download notice
+            is up (the notice owns Cancel and Esc then) */}
+        <span data-import-read-status="" aria-live="polite" style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+          {ocrRead && !ocrNotice && (<>
+            <span>{ocrRead === "starting" ? OCR_STARTING_MESSAGE : ocrRead === "waiting" ? OCR_WAITING_MESSAGE : ocrReadingMessage(ocrReadProgress)}</span>
+            <button type="button" className="btn-ghost" onClick={cancelImportRead} style={{ padding: "var(--sp-1) var(--sp-2)" }}>Cancel</button>
+          </>)}
+        </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 12, opacity: 0.75 }} aria-live="polite">
           <span>{shapes.filter((s) => panelKeySet.has(s.sheet_id)).length} shapes</span>
           <span>{cloudMode ? "drive" : "local"}{saveState === "saving" ? " · saving…" : saveState === "saved" ? " · saved" : ""}</span>
@@ -10575,6 +11040,16 @@ export default function TakeoffCanvas() {
       {!focusMode && (!workspaceLayout || workspaceArrangement.counter) && !agentOpen && !showReport && <LiveCounter rows={liveCounterRows} onActivate={(id) => activateCondition(id, { reassign: false })} />}
       {/* the manual, last in the tree so it sits above every panel and dock */}
       {guideOpen && <UserGuide onClose={() => setGuideOpen(false)} />}
+      {/* on-device OCR's download notice (#471): modal over everything, the
+          gallery and the guide included. Keys stop here so the canvas's
+          window shortcuts (Delete, ⌘Z, letters) don't act behind it, and a
+          press on the scrim doesn't move focus out of the notice. */}
+      {ocrNotice && (
+        <div onKeyDown={(e) => e.stopPropagation()} onMouseDown={(e) => { if (e.target === e.currentTarget) e.preventDefault(); }}
+          style={{ position: "fixed", inset: 0, zIndex: Z.modal, background: "var(--scrim)", display: "flex", alignItems: "center", justifyContent: "center", padding: "var(--sp-4)" }}>
+          <OcrDownloadNotice downloadBytes={ocrNotice.downloadBytes} progress={ocrNotice.progress} onDownload={ocrHost.download} onCancel={ocrHost.cancel} />
+        </div>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ services:
       dockerfile: deploy/selfhosted/Dockerfile
       args:
         VITE_DEFAULT_LANGUAGE: hu
+        VITE_OCR: "on"
     ports:
       - "8084:8080"
     restart: unless-stopped

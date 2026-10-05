@@ -17,7 +17,7 @@
 [![Live demo](https://img.shields.io/badge/demo-opentakeoff.kentucky--ai.com-2ea44f.svg)](https://opentakeoff.kentucky-ai.com)
 [![MCP registry](https://img.shields.io/badge/MCP-io.github.Kentucky--ai%2Fopentakeoff-6f42c1.svg)](https://registry.modelcontextprotocol.io)
 [![npm](https://img.shields.io/npm/v/opentakeoff-mcp?label=opentakeoff-mcp)](https://www.npmjs.com/package/opentakeoff-mcp)
-[![Benchmark](https://img.shields.io/badge/benchmark-OpenTakeoff%20Academy-orange.svg)](https://aec.kentucky-ai.com)
+[![Benchmark](https://img.shields.io/badge/benchmark-OpenTakeoff%20Academy-orange.svg)](https://union.kentucky-ai.com)
 [![OpenArena](https://openarena.to/api/badge/cmsgykvsq0000mkuv7byhlgnl)](https://openarena.to/en/projects/cmsgykvsq0000mkuv7byhlgnl)
 [![Sponsor](https://img.shields.io/github/sponsors/Kentucky-ai?logo=githubsponsors&label=sponsor&color=EA4AAA)](https://github.com/sponsors/Kentucky-ai)
 
@@ -206,9 +206,10 @@ Claude Code:`claude mcp add opentakeoff -- npx -y opentakeoff-mcp`。Claude Desk
    接下来该做什么。一个沉默的零做不到这一点。答不上来的工具会带着明确理由拒绝,而不是回一个
    看起来说得过去的数字。
 
-### 验证你的实力 —— OpenTakeoff Academy
+### 验证你的实力 —— OpenTakeoff Academy / Commonwealth Agent Union
 
-[**aec.kentucky-ai.com**](https://aec.kentucky-ai.com) 是一个独立的开放基准测试和认证竞技场,
+[**Commonwealth Agent Union**](https://union.kentucky-ai.com) 是 OpenTakeoff Academy 的新主页;
+Academy 是该联合会面向建筑智能体的评估和认证部门,
 面向会做算量的智能体。带上任意模型和你自己的执行框架;评分依据是**在你不掌控的几何图形上操作
 一个真实的算量工具** —— 标定错了,面积就错了 —— 而不是靠吐出一个"看起来说得过去"的数字。
 每次运行都会输出一份带签名的记录包,包含每次工具调用的完整来源;评分对照的是留出的真值和一个
@@ -390,17 +391,20 @@ By-sheet / Materials / Shapes-audit / **按楼层 × 房间**,全精度单元格
 
 <br/>
 
-OpenTakeoff 可以请求一个**你自己**提供的视觉模型来读图纸上的信息 —— 首先是当图纸文字没有标注
-比例时读出图上标的比例(扫描件、旋转过的标注、图片形式的图签栏)。点工具栏里的 **AI**,
-指向一个 **OpenAI 风格**的接口(默认选项;你自己机器上的本地运行环境说的就是这套协议,不需要
-密钥)或者一个 **Anthropic 风格**的接口,再加一个支持视觉的模型 id。
+画布内的算量智能体运行在一个**你自己**提供的视觉模型上:输入一个目标,它就调用应用自带的工具
+去完成。打开 **Agent** 面板和其中的 AI 设置,指向一个 **OpenAI 风格**的接口(默认选项;
+你自己机器上的本地运行环境说的就是这套协议,不需要密钥)或者一个 **Anthropic 风格**的接口,再加
+一个支持视觉的模型 id。
 
-- **会发送什么,而且只在你点了 AI 按钮的时候才发送:**一张对应图纸区域的截图,加上问题 ——
-  发到*你自己*的接口。绝不会发送整份图纸文件、文件名、项目名,或者你的算量结果。
-- **什么都不配置 = 什么都不存在。**未配置的构建版本不会多出任何界面,也不会产生任何 AI 网络
-  请求。不管有没有配置都没有遥测。
-- 得到的答案永远只是一个**建议**,走的是和文字识别出的比例一样的"确认后采用"流程,接受时会
-  显示标定过的参考标尺。
+- **会发送什么,而且只在你启动的一次运行进行中才发送:**你的目标、提示词,以及智能体的工具返回
+  的内容,发到*你自己*的接口。其中包括图纸名称(其中含有 PDF 文件名)、每张图纸的尺寸和比例
+  状态、它读到的文字和明细表行,以及它查看的图纸区域的图片(最大可到整张图纸,每边最多
+  1,024 像素)。还包括你的条件(饰面编号、填充图案、损耗 %)以及它测量出的面积和周长。这份清单
+  并不完整。绝不会发送整份图纸文件。
+- **什么都不配置 = 什么都不发送。**未配置的构建版本不会产生任何 AI 网络请求;Agent 面板只会
+  提供 AI 设置入口。不管有没有配置都没有遥测。
+- 智能体找到的图形是**提议**:每个图形都以虚线等着,直到你接受它。它创建的条件会直接加入你的
+  列表。
 - 密钥存在这个浏览器的 localStorage 里 —— 用一个你能随时吊销的密钥。部署方:
   `VITE_AI_ENDPOINT` / `VITE_AI_MODEL` / `VITE_AI_PROVIDER` 可以固化团队默认值,但**绝不要在
   公开部署上设置 `VITE_AI_KEY`** —— Vite 会把它内联进发布出去的打包文件里。
@@ -505,7 +509,7 @@ OpenTakeoff 是一个应用研究项目的开放那一半,这个项目由一位�
 经过脱敏处理的产物 —— 模型卡、基准规范、论文 —— 会在通过审查后陆续发布:
 [Hugging Face](https://huggingface.co/Kentucky-ai) ·
 [kentucky-ai.com](https://kentucky-ai.com)。智能体侧的评测在
-[OpenTakeoff Academy](https://aec.kentucky-ai.com)。
+[OpenTakeoff Academy](https://union.kentucky-ai.com)。
 
 ---
 
