@@ -173,8 +173,8 @@ takeoff. Everything is in the [CHANGELOG](CHANGELOG.md), and the older highlight
 | **Ingest** | PDFs, images and whole `.zip` plan sets, unpacked in the browser, with up to 4 sheets side by side |
 | **Scale** | Detects the drawn scale note, calibrates from a known dimension, and grades a dimension check, all per sheet |
 | **Measure** | Area, Rectangle, Linear, Curved Line, Surface Area (walls), Count, Cut Out, ⟂ Transitions and Zone check, in imperial or metric |
-| **Conditions** | A color and CAD hatch for each finish, waste %, ×N multiplier, height, thickness, and import from the finish schedule |
-| **Materials** | Coverage rate × basis gives rounded order quantities. Includes a grout calculator and the figured seam LF |
+| **Conditions** | Trade-aware conditions with color/CAD hatch, waste, ×N, H/T/rise/drop; self-hosted builds also support built-in electrical/low-voltage count symbols and none/tag/custom/sequential plan labels |
+| **Materials** | Coverage or per-piece rules × basis give rounded order quantities, with per-item waste and assemblies. Self-hosted metric mode displays coverage in m²/m while storing the same native quantity model |
 | **Roll goods** | Lanes, seams, multi-roll splits and to-scale cuts with drag-to-reorder nesting |
 | **Multi-sheet** | A sheet tree with title-block numbers, a gallery, levels, **stitching across a match line**, PDF layer roles and a reference split |
 | **Estimate** | Unit prices, tax, overhead and profit, an Excel export and a **bid proposal PDF** |

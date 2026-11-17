@@ -34,6 +34,9 @@
 //   label     NO stamp — label-vocabulary assignment is a documented non-edit
 //             (same rule as renameShapeLabel); value semantics are exactly
 //             shapeLabels.assignShapeLabel's (visible string sets, else clears).
+//   objectLabel NO stamp — the visible identifier on a count object is plan
+//             annotation metadata (like `label`, not geometry). Presence-aware
+//             restore keeps undo byte-exact, including an absent object block.
 //   delete    no stamp on the survivors; returns `counted`, the per-origin-
 //             method tally the deletion counters ride (`noCount: true`
 //             suppresses it — the inverse of an add must not tally a deletion).
@@ -81,6 +84,7 @@ export const PROVENANCE_POLICY = {
   geom: "stampEdit(editKind) once, frozen from prev; restampFrom stamps nothing",
   reassign: "stampEdit('reassign') per shape; restore stamps nothing",
   label: "no stamp (documented non-edit)",
+  objectLabel: "no stamp (count-object plan identifier; presence-aware restore)",
   delete: "no stamp; counted per origin.method unless noCount",
   replace: "no stamp, no counted, no undo entry (whole-array non-edit)",
   review: "origin.reviewed → true + accepted_ts per still-pending shape; restore puts the prior origin back verbatim",
@@ -280,6 +284,36 @@ export function applyShapeCommand(shapes, cmd) {
         next = shapes;
         for (const id of cmd.ids) next = assignShapeLabel(next, id, cmd.value);
       }
+      return { shapes: next, inverse };
+    }
+    case "objectLabel": {
+      const idSet = new Set(cmd.ids || []);
+      const inverse = {
+        type: "objectLabel",
+        restore: shapes.filter((s) => idSet.has(s.id)).map((s) => ({ id: s.id, ...(Object.prototype.hasOwnProperty.call(s, "object") ? { object: s.object } : {}) })),
+      };
+      if (cmd.restore) {
+        const byId = new Map(cmd.restore.map((r) => [r.id, r]));
+        return {
+          shapes: shapes.map((s) => {
+            const r = byId.get(s.id);
+            if (!r) return s;
+            if (Object.prototype.hasOwnProperty.call(r, "object")) return { ...s, object: r.object };
+            const out = { ...s }; delete out.object; return out;
+          }),
+          inverse: {
+            type: "objectLabel",
+            restore: shapes.filter((s) => byId.has(s.id)).map((s) => ({ id: s.id, ...(Object.prototype.hasOwnProperty.call(s, "object") ? { object: s.object } : {}) })),
+          },
+        };
+      }
+      const value = typeof cmd.value === "string" ? cmd.value.trim() : "";
+      const next = shapes.map((s) => {
+        if (!idSet.has(s.id) || s.measure_role !== "count") return s;
+        const object = s.object && typeof s.object === "object" && !Array.isArray(s.object) ? { ...s.object } : {};
+        if (value) object.label = value; else delete object.label;
+        return { ...s, object };
+      });
       return { shapes: next, inverse };
     }
     case "delete": {

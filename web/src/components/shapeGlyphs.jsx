@@ -12,6 +12,7 @@
 import { flattenCurve } from "../lib/curve.js";
 import { dashArrayFor } from "../lib/lineStyles.js";
 import { NO_FILL } from "./hatches.jsx";
+import { ObjectMarker } from "./ObjectMarker.jsx";
 
 // Fill for a committed shape. Hatch tiles are 10 stage-units — once the zoom
 // puts a tile under ~4 screen px the pattern aliases into subpixel mush
@@ -44,8 +45,8 @@ export function renderShapeGlyph(s, { dn, cond, sel, z, darkMode, selection = {}
   const fill = (c) => shapeFill(c, { scale: z, darkMode, patId });
 
   if (s.measure_role === "count") {
-    const [cx, cy] = pts[0], r = 7 / z;
-    return <rect key={s.id} x={cx - r} y={cy - r} width={r * 2} height={r * 2} rx={2 / z} fill={col + (pending ? "55" : "cc")} stroke={sel ? selection.color : "#fff"} strokeWidth={(sel ? 3 : 1.5) / z} strokeDasharray={pending ? `${3 / z} ${2.5 / z}` : undefined} />;
+    const [cx, cy] = pts[0];
+    return <ObjectMarker key={s.id} shape={s} condition={cond} cx={cx} cy={cy} zoom={z} selected={sel} pending={pending} selectionColor={selection.color} />;
   }
   if (s.measure_role === "surface_area") {
     return <polyline key={s.id} points={pts.map((q) => q.join(",")).join(" ")} fill="none" stroke={sel ? selection.color : col} strokeOpacity={pending ? 0.85 : undefined} strokeWidth={(sel ? 4.5 : 3.5) / z} strokeDasharray={pending ? pDash : `${10 / z} ${3 / z} ${2 / z} ${3 / z}`} strokeLinecap="round" strokeLinejoin="round" />;

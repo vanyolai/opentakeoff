@@ -4,6 +4,10 @@ OpenTakeoff has two audiences: people working on the repository and agents
 performing takeoffs. Start with the [wiki index](docs/wiki/README.md); read only
 the page needed for the current task.
 
+The downstream `selfhosted` product direction and branch policy live in
+[docs/SELFHOSTED_DIRECTION.md](docs/SELFHOSTED_DIRECTION.md). Read that file
+before starting downstream feature work.
+
 ## Quick start
 
 **To run a takeoff**, you don't need a clone. Connect the published server

@@ -15,8 +15,9 @@ const WARN = `${176 / 255} ${58 / 255} ${38 / 255} rg`;
 test('marked set: {{qty}} prints the linked count; an unlinked field prints literally in the warning ink', async () => {
   const source = await PDFDocument.create(); source.addPage([300, 200]);
   const sourceBytes = await source.save();
-  const conditions = [{ id: 'em', finish_tag: 'EM-1', color: '#2563eb', multiplier: 1 }];
-  const shapes = [1, 2].map((i) => ({ id: `s${i}`, sheet_id: 'sample.pdf', condition_id: 'em', measure_role: 'count', computed: { count: 1 }, verts_norm: [[0.1 * i, 0.3]] }));
+  const conditions = [{ id: 'em', finish_tag: 'EM-1', color: '#2563eb', multiplier: 1,
+    object_style: { marker: 'symbol', symbol_id: 'camera_dome', label_mode: 'sequence', label_prefix: 'CAM-' } }];
+  const shapes = [1, 2].map((i) => ({ id: `s${i}`, sheet_id: 'sample.pdf', condition_id: 'em', measure_role: 'count', computed: { count: 1 }, verts_norm: [[0.1 * i, 0.3]], object: { label: `CAM-${i}`, layer_id: 'security' } }));
   const style = { color: '#dc3d43' };
   const marks = [
     { id: 'linked', sheet_id: 'sample.pdf', type: 'text', at: [0.5, 0.2], text: 'x{{qty}} lights', condition_id: 'em' },
@@ -33,6 +34,7 @@ test('marked set: {{qty}} prints the linked count; an unlinked field prints lite
     contents += Buffer.from(String(filter) === '/FlateDecode' ? inflateSync(stream.contents) : stream.contents).toString('latin1');
   }
   assert.ok(contents.includes(hex('x2 EA lights')), 'the linked note prints the measured count');
+  assert.ok(contents.includes(hex('CAM-1')) && contents.includes(hex('CAM-2')), 'downstream instance labels print beside the new live-quantity notes');
   assert.ok(contents.includes(hex('need 2 EA')), 'the toolbar callout resolves too');
   assert.ok(contents.includes(hex('x{{qty}} spare')), 'the unlinked field prints literally, never blank or 0');
   assert.ok(!contents.includes(hex('x0 EA')));

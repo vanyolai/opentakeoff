@@ -27,6 +27,7 @@ import { useCompanyProfiles, CompanyIdentityFields } from "./CompanyIdentity.jsx
 import { resolveBranding, loadBrandingSelection, saveBrandingSelection, OT_WATERMARK } from "../lib/branding.js";
 import { projectIdFromUrl } from "../lib/store.js";
 import { describeConditionEdit, proposedConditionEditRows } from "../lib/proposals.js";
+import { ConditionMark } from "./ObjectMarker.jsx";
 import { qtyLabels, resolveNote } from "../lib/noteFields.ts";
 
 const num = (v, d = 1) => (Number(v) || 0).toLocaleString(undefined, { maximumFractionDigits: d });
@@ -50,6 +51,7 @@ const sheetNum = (v, d = 1) => {
 };
 
 export default function ReportPanel({ projectName, onProjectName, conditions, shapes, sheetLabel, sheetDims, onMarkedSet, markedSetDark, onClose, markups = [], rfis = [], scaleInfo = [], provenanceCounters = null, clientInfo = {}, onClientInfo, conditionColumns = [], shapeLabels = [], units = "imperial", rollByCond = null, conditionEditProposals = [], onOpenCompanySetup = null, companyRev = 0, onEstimate = null }) {
+  const conditionById = useMemo(() => new Map(conditions.map((condition) => [condition.id, condition])), [conditions]);
   // proposals (#365): a pending condition-edit diff prints BESIDE the current
   // values — the row's numbers are always the current knobs; the chip says
   // what the agent proposed, and the JSON export carries the same rows.
@@ -392,7 +394,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         return (
           <td key={col.key} style={{ ...td, textAlign: "left" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 12, height: 12, background: r.color, display: "inline-block", border: "1px solid var(--ink-faint)" }} />
+              <ConditionMark condition={conditionById.get(r.id)} color={r.color} variant="legend" />
               <strong style={{ fontFamily: "var(--f-mono)", fontWeight: 600 }}>{r.finish_tag}</strong>
               {r.multiplier > 1 && <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>×{r.multiplier}</span>}
             </span>
@@ -817,7 +819,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
         {rows.length > 0 && (
           <p style={{ maxWidth: 980, margin: "14px auto 0", fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.6 }}>
             <strong>{AU} w/Waste</strong> = measured quantity × waste %. Waste is set per condition in the canvas. Wall {AU} comes from Surface-Area
-            traces (run × height); Border {AU} from Linear runs with a thickness.{M ? " Supporting-material coverage rates stay as entered (SF/LF-based)." : ""}
+            traces (run × height); Border {AU} from Linear runs with a thickness.
             {tableCols.some((c) => c.key === "perimeter_ref") && (
               <> Perim {LU} (ref) sums floor-trace perimeters — includes door openings and shared walls; reference only, never totaled or waste-adjusted.</>
             )}
@@ -850,7 +852,7 @@ export default function ReportPanel({ projectName, onProjectName, conditions, sh
                       <tr key={r.id}>
                         <td style={{ ...td, textAlign: "left" }}>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ width: 12, height: 12, background: r.color, display: "inline-block", border: "1px solid var(--ink-faint)" }} />
+                            <ConditionMark condition={conditionById.get(r.id)} color={r.color} variant="legend" />
                             <strong style={{ fontFamily: "var(--f-mono)", fontWeight: 600 }}>{r.finish_tag}</strong>
                             {r.multiplier > 1 && <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>×{r.multiplier}</span>}
                           </span>

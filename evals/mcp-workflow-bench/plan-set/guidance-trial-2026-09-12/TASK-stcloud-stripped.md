@@ -26,4 +26,3 @@ Scale: 1/8" = 1'-0", `set_scale { sheet: "sample-finish-plan.pdf", upp: 0.055555
 | `OFFICE 136` | `CPT-1` | |
 | `PATIENT ROOM 137` | `CPT-1` | door to the corridor and door to 137A; windows on the north wall |
 | `TOILET 137A` | `PT-1/PT-2` | dense tile hatch |
-

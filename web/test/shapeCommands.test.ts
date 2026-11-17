@@ -243,6 +243,14 @@ test("add: round-trip via the noCount inverse delete is identity", () => {
   assert.equal(undone.counted, undefined, "undoing an add must not tally a deletion");
 });
 
+test("objectLabel: edits count identifiers without touching grouping labels and undoes exactly", () => {
+  const count = { id: "count", measure_role: "count", label: "Level 2", object: { layer_id: null, label: "CAM-7" } };
+  const forward = applyShapeCommand([count], { type: "objectLabel", ids: ["count"], value: "CAM-8" } as any);
+  assert.equal((forward.shapes[0] as any).object.label, "CAM-8");
+  assert.equal((forward.shapes[0] as any).label, "Level 2");
+  assert.deepEqual(applyShapeCommand(forward.shapes, forward.inverse).shapes, [count]);
+});
+
 test("add: restore:true re-inserts VERBATIM (no created_at re-stamp, no id re-mint) at the recorded indices", () => {
   const a = manualShape("shp-a"), b = machineShape("shp-b"), c = manualShape("shp-c");
   const res = applyShapeCommand([a, c], { type: "add", shapes: [clone(b)], restore: true, at: [1] });

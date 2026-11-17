@@ -264,7 +264,7 @@ A scale that arrives from an agent takeoff (an MCP session's export, imported he
 
 ### Metric
 
-The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, and the Marked Set legend read in m² / m (the SY column retires), footprint dimensions read in metres and volumes in m³, and Calibrate takes meters. It's display only—takeoffs are stored unit-agnostically, so flipping it never changes a measurement. Supporting-material coverage rates stay as entered.
+The **`ft` / `m`** toggle beside the Scale chip switches the whole display layer: readouts, shape chips, panels, the Report, CSV, Excel, and the Marked Set legend read in m² / m (the SY column retires), footprint dimensions read in metres and volumes in m³, and Calibrate takes meters. Supporting-material coverage inputs and presets follow the same unit toggle (SF/LF ↔ m²/m), including CSV/XLSX coverage labels. Storage and quantity math remain in native units, so flipping the toggle never changes a measurement or order quantity.
 
 ---
 
@@ -279,6 +279,8 @@ A **condition** is one finish—`LVT-1`, `CPT-2`, `RB-1`—and it's what every m
 - **Finish tag**—rename in place.
 - **× N units** (the multiplier, right after the tag)—for a repeating layout: measure one identical unit (one apartment, one hotel room) and count it N times instead of tracing it N times. Every quantity on the condition multiplies, the Report and the buy list included; the field lights cobalt while it's above 1 and the row wears a cobalt **×N** chip. Same finish somewhere that shouldn't multiply (the corridor)? Give that area its own condition with **⎘ Duplicate for another area…** and leave it at ×1.
 - **Waste %**—the allowance the Report adds on top of the measured quantity. Per condition, matched to the install: ~8% straight-lay LVP, ~15% diagonal, ~20% herringbone.
+- **Trade**—book the condition to an upstream Trade suite (or leave it on Auto, where the tag prefix chooses). The canvas Trade view filters by this field; hiding another trade never deletes its data.
+- **Object**—for Count takeoffs, keep the original colored square or choose a built-in electrical/low-voltage symbol. **Label** can be None, Condition tag, Custom, or Sequential; sequential placement advances the condition's next number and each placed count keeps the label it received.
 - **Line** color, **Fill** color (or **No fill**), and the **hatch pattern**. In the top-bar band, **Line** and **Fill** are two swatch buttons that each open their own palette (one at a time; Esc or a click outside closes)—the swatch shows the current color, so the band reads at a glance. The docked panel keeps both palettes inline.—a picker grid of CAD hatches (plank, herringbone, tile, terrazzo…) that names the pattern under your cursor, so the canvas reads like the real drawing.
 - **Line style**—the outline dash for this finish's floor and linear takeoffs, on canvas and in the Marked Set.
 - **H** (height, ft)—the default for **new** wall traces (Surface Area SF = LF × H) and the vertical-SF display. Existing walls keep the height they were drawn at—select a wall to change only that one (§5).
@@ -308,7 +310,7 @@ Open **Supporting Materials** on a condition. Two free-text fields sit above the
 
 Below that, list what actually goes on the order: adhesive, sealer, polyurethane, thinset, grout, cove-base adhesive. Each line carries:
 
-- a **quantity rule** and a **basis** (floor SF, linear LF, each, or **seam LF**): **1 per N** is a coverage rate—*1 gal per 150 SF*—and **N per 1** is a count per measured unit—*2 anchors per EA*, *1 cover plate per piece*;
+- a **quantity rule** and a **basis** (floor SF / m², linear LF / m, each, or **seam LF / m**, following the unit toggle): **1 per N** is a coverage rate—*1 gal per 150 SF*—and **N per 1** is a count per measured unit—*2 anchors per EA*, *1 cover plate per piece*;
 - a **round up** flag (on by default—you buy whole buckets and bags);
 - the item's own **waste %**, applied before the round-up (cut tape, spilled adhesive). It's separate from the condition's waste, and empty means none;
 - a **preset picker** for adhesive and mortar lines: real trowel-notch and roller spread rates (PSA rollers at 300 SF/gal down to coarse wood notches at 40 SF/gal; mortar trowels from 90 to 30 SF per 50-lb bag). Generic industry-typical values—always verify against the product data sheet;
@@ -529,7 +531,7 @@ Trace a wall run in plan; wall SF = traced LF × the condition's **height**. The
 
 ### Count (`C`)
 
-One click, one marker, one EA. Counts commit immediately on click and are the one measurement that works without a scale.
+One click, one marker, one EA. Counts commit immediately on click and are the one measurement that works without a scale. The active condition decides whether that marker is the original color square or a built-in symbol. A count can also carry a plan label: tag/custom labels resolve from the condition, while sequential labels are assigned to the instance at placement time so later numbering changes do not rewrite existing devices.
 
 ### Cut Out — deducts (`D`, `⇧D`)
 
@@ -672,6 +674,10 @@ Quantities recompute live as you edit. Every completed gesture is one undo step 
 ### Reassigning a shape's condition
 
 With a shape selected, click a condition **panel row, strip chip, or palette chip**—each shows the reassign affordance when a shape is selected—and the shape moves to that finish, quantities and all. The number keys never reassign: a digit press arms the condition without touching your selection, so a stray `3` can't silently move quantities. Reassigning is one undo step.
+
+### Count plan labels
+
+When a **Count** is selected, its readout includes **Plan label**. Editing it writes an instance label for that count only; it overrides the condition's tag/custom/sequential display without changing EA or the shape-label classification below. Copy/paste preserves object metadata, and a sequential condition assigns the pasted count a fresh sequence label.
 
 ### Shape labels — phases and areas
 

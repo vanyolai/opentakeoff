@@ -19,4 +19,3 @@ export function validator() {
   schemas.forEach(({ schema }) => ajv.addSchema(schema));
   return ajv;
 }
-

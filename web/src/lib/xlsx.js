@@ -175,8 +175,9 @@ export async function buildXlsx(sheets) {
  *   [args.ctx] handed to the getters
  * @param {((sheetId: any) => string)|null} [args.sheetLabel]
  * @param {"imperial"|"metric"} [args.units] display units — "metric" converts
- *   the Conditions, By-sheet, floor × room, and Shapes tabs to m2/m (SY retires)
- *   exactly like the CSV. "imperial" (default) is byte-identical.
+ *   the Conditions, By-sheet, floor × room, Shapes, and Materials tabs to
+ *   metric display units (SY retires), exactly like the CSV. "imperial"
+ *   (default) is byte-identical.
  * @returns {Array<{name: string, rows: any[][]}>}
  */
 export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols = null, ctx = null, sheetLabel = null, units = "imperial", byFloorRoom = [] }) {
@@ -214,7 +215,7 @@ export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols =
   // Materials — per condition, then the combined buy list (mirrors the CSV)
   const materials = [["Finish", "Material", "Qty", "Unit", "Coverage", "Note"]];
   for (const r of rows) for (const m of (r.materials || [])) {
-    materials.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m), m.note || ""]);
+    materials.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m, units), m.note || ""]);
   }
   const combined = materialsSummary(rows);
   if (combined.length) {

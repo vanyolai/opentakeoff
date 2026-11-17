@@ -23,6 +23,7 @@ import { REPORT_SCHEMA } from "./takeoffConstants.ts";
 import { csvEsc as esc } from "./csv.js";
 import { GETTERS, CSV_PROFILE, colGetter, floorPerimeterLf, applyUnits, METRIC_CSV_LABELS } from "./reportColumns.js";
 import { M_PER_FT, M2_PER_SF } from "./units";
+import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "./coverageUnits.js";
 import { attrValue } from "./conditionColumns.js";
 import { shapeLabelValue } from "./shapeLabels.js";
 import { compareSheetKeys } from "./sheetKey"; // NOT ./sheets — that module imports pdfjs-dist
@@ -55,14 +56,22 @@ export function itemRaw(m, basisVal) {
   if (!(per > 0)) return 0;
   return itemRule(m) === "each" ? basisVal * per : basisVal / per;
 }
-const BASIS_LABEL = { linear: "LF", count: "EA", seam_lf: "seam LF" };
-export const basisLabel = (b) => BASIS_LABEL[b] || "SF";
+export const basisLabel = (b, units = "imperial") => coverageBasisLabel(b, units);
 // "1 gal / 150 SF", "2 ea / 1 EA", plus "+ 5% waste" when the item carries one —
-// the Coverage cell of the CSV and Excel materials tabs. A coverage row with no
-// waste prints exactly what it always printed.
-export function coverageLabel(m) {
+// the Coverage cell of the CSV and Excel materials tabs. Metric mode changes
+// only the displayed rate/basis; stored coverage remains in native SF/LF/EA.
+export function coverageLabel(m, units = "imperial") {
   const u = m.unit || "unit";
-  const base = itemRule(m) === "each" ? `${m.per} ${u} / 1 ${basisLabel(m.basis)}` : `1 ${u} / ${m.per} ${basisLabel(m.basis)}`;
+  const eachRule = itemRule(m) === "each";
+  const raw = Number(m.per) || 0;
+  const shown = units === "metric"
+    ? round2(eachRule
+      ? coverageFromDisplay(raw, m.basis || "area", units)
+      : coverageToDisplay(raw, m.basis || "area", units))
+    : m.per;
+  const base = eachRule
+    ? `${shown} ${u} / 1 ${basisLabel(m.basis, units)}`
+    : `1 ${u} / ${shown} ${basisLabel(m.basis, units)}`;
   const w = itemWastePct(m);
   return w > 0 ? `${base} + ${w}% waste` : base;
 }
@@ -432,8 +441,8 @@ export function grandTotals(rows) {
  * @param {string} [brandName]
  * @param {"imperial"|"metric"} [units] display units — "metric" converts every
  *   dimensioned column/section to m²/m and RETIRES the SY column (upstream's
- *   metric contract); coverage rates in the materials section stay as entered
- *   (SF/LF-based). "imperial" (default) is byte-identical to the frozen export.
+ *   metric contract), including supporting-material coverage labels. Stored
+ *   coverage stays in native units. "imperial" (default) is byte-identical.
  * @returns {string}
  */
 export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel = null, cols = null, ctx = null, byLabel = null, brandName = "OpenTakeoff", units = "imperial") {
@@ -462,10 +471,9 @@ export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel =
   lines.push(columns.map((c) => esc(foot(c))).join(","));
 
   // supporting materials — per condition, then a combined buy list. Coverage
-  // rates deliberately stay as entered (SF/LF-based) in metric mode — the
-  // upstream metric contract; the report panel carries the footnote.
+  // labels follow display units while stored rates stay in native SF/LF/EA.
   const perCond = [];
-  for (const r of rows) for (const m of (r.materials || [])) perCond.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m), m.note || ""]);
+  for (const r of rows) for (const m of (r.materials || [])) perCond.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m, units), m.note || ""]);
   if (perCond.length) {
     lines.push("");
     lines.push(["Finish", "Material", "Qty", "Unit", "Coverage", "Note"].map(esc).join(","));

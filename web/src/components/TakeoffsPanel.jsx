@@ -44,6 +44,9 @@ import { hasRollSetup, mintRollSetup } from "../lib/rollTakeoff.js";
 import { Z } from "../lib/ui.js";
 import { ftIn } from "../lib/units";
 import { describeConditionEdit } from "../lib/proposals.js";
+import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "../lib/coverageUnits.js";
+import { objectSymbolsByGroup, resolveObjectStyle, sequenceObjectLabelPrefix } from "../lib/objectPresentation.js";
+import { ConditionMark, ObjectSymbolPreview } from "./ObjectMarker.jsx";
 import { TRADE_SUITES, suiteById, conditionTrade } from "../lib/tradeSuites.ts";
 
 export const PANEL_MIN_W = 240;
@@ -173,7 +176,7 @@ function LibDraftInput({ name, value, number, placeholder, width, onCommitText }
 // Coverage preset picker — shared by the condition-line editor and the
 // Materials tab so a library "Adhesive" and an attached line offer the same
 // notch/roller list. Renders nothing when the kind has no preset table.
-function CoveragePresetSelect({ material: m, onPick }) {
+function CoveragePresetSelect({ material: m, units = "imperial", onPick }) {
   const presets = (m.basis || "area") === "area" ? MATERIAL_PRESETS[materialKind(m)] : undefined;
   if (!presets) return null;
   return (
@@ -182,7 +185,11 @@ function CoveragePresetSelect({ material: m, onPick }) {
       title="Coverage preset — trowel notch / spread rate. Generic industry-typical values; verify against the product data sheet."
       style={{ ...ip, background: "var(--paper-bright)" }}>
       <option value="">preset…</option>
-      {presets.map((t) => <option key={t.label} value={t.label}>{t.label} · {t.per} SF/{m.unit || "unit"}</option>)}
+      {presets.map((t) => (
+        <option key={t.label} value={t.label}>
+          {t.label} · {Number(coverageToDisplay(t.per, "area", units).toFixed(2))} {coverageBasisLabel("area", units)}/{m.unit || "unit"}
+        </option>
+      ))}
     </select>
   );
 }
@@ -190,7 +197,7 @@ function CoveragePresetSelect({ material: m, onPick }) {
 // Editable supporting-materials rows for a condition (coverage-derived order qty).
 export function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library, libById, overridden, onRevert, onAttach, onPromote,
     twin = false, parentTag = "", dropped = [], parentRows = [], onFollowFamilyRow, onRestoreDroppedRow,
-    heightFt = 0 }) {
+    heightFt = 0, units = "imperial" }) {
   // library link affordances (#47, all optional so the editor works standalone):
   // linked lines show ⛓; a field differing from its library entry tints amber
   // and grows a per-field ↺ revert; unlinked lines can be promoted to the library
@@ -218,8 +225,27 @@ export function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library,
           const grout = { ...g, ...patch };
           onUpdate(m.id, { grout, ...(groutDerivedFields(grout, m.basis, heightFt) || {}) });
         };
+        const rateToDisplay = (row, basis = row.basis || "area") => {
+          const raw = Number(row.per) || 0;
+          if (units !== "metric") return raw;
+          return itemRule(row) === "each"
+            ? coverageFromDisplay(raw, basis, units)
+            : coverageToDisplay(raw, basis, units);
+        };
+        const rateFromDisplay = (row, shown, basis = row.basis || "area") => {
+          if (units !== "metric") return shown;
+          return itemRule(row) === "each"
+            ? coverageToDisplay(shown, basis, units)
+            : coverageFromDisplay(shown, basis, units);
+        };
         const perInput = (row) => (
-          <input name="material-per" type="number" min="0" step="any" value={row.per || ""} onChange={(e) => onUpdate(row.id, { per: Math.max(0, parseFloat(e.target.value) || 0) })} placeholder="0" style={{ ...ip, width: 66, ...(ov("per") ? { border: OV } : {}) }} />
+          <input name="material-per" type="number" min="0" step="any"
+            value={row.per ? Number(rateToDisplay(row).toFixed(6)) : ""}
+            onChange={(e) => {
+              const shown = Math.max(0, parseFloat(e.target.value) || 0);
+              onUpdate(row.id, { per: rateFromDisplay(row, shown) });
+            }}
+            placeholder="0" style={{ ...ip, width: 66, ...(ov("per") ? { border: OV } : {}) }} />
         );
         const gi = (key, title, extra) => (
           <GroutParamInput name={`grout-${key}`} value={g[key]} title={title} override={ov("grout")}
@@ -256,11 +282,15 @@ export function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library,
             <span style={{ color: "var(--ink-muted)" }}>per</span>
             {itemRule(m) === "each" ? <span style={{ color: "var(--ink-muted)" }}>1</span> : perInput(m)}
             {ov("per") && rv(m, "per")}
-            <select name="material-basis" value={m.basis || "area"} onChange={(e) => onUpdate(m.id, { basis: e.target.value })} style={{ ...ip, background: "var(--paper-bright)", ...(ov("basis") ? { border: OV } : {}) }}>
-              <option value="area">floor SF</option>
-              <option value="linear">linear LF</option>
+            <select name="material-basis" value={m.basis || "area"} onChange={(e) => {
+                const newBasis = e.target.value;
+                const shown = rateToDisplay(m);
+                onUpdate(m.id, { basis: newBasis, per: rateFromDisplay(m, shown, newBasis) });
+              }} style={{ ...ip, background: "var(--paper-bright)", ...(ov("basis") ? { border: OV } : {}) }}>
+              <option value="area">{units === "metric" ? "floor m²" : "floor SF"}</option>
+              <option value="linear">{units === "metric" ? "linear m" : "linear LF"}</option>
               <option value="count">each</option>
-              <option value="seam_lf" title="Figured seam length from the roll layout — 0 until this condition carries a roll setup">seam LF</option>
+              <option value="seam_lf" title="Figured seam length from the roll layout — 0 until this condition carries a roll setup">{units === "metric" ? "seam m" : "seam LF"}</option>
             </select>
             {ov("basis") && rv(m, "basis")}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: ov("round") ? "var(--c-warning)" : "var(--ink-muted)" }} title="Round up to whole units (you buy whole buckets/bags)">
@@ -272,7 +302,7 @@ export function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library,
                 onChange={(e) => { const w = Math.max(0, parseFloat(e.target.value) || 0); onUpdate(m.id, { waste_pct: w > 0 ? w : undefined }); }}
                 style={{ ...ip, width: 44 }} />% waste
             </label>
-            <CoveragePresetSelect material={m} onPick={(patch) => onUpdate(m.id, patch)} />
+            <CoveragePresetSelect material={m} units={units} onPick={(patch) => onUpdate(m.id, patch)} />
             <input name="material-note" value={m.note || ""} onChange={(e) => onUpdate(m.id, { note: e.target.value })} placeholder="note (coats, trowel…)" style={{ ...ip, width: 150, ...(ov("note") ? { border: OV } : {}) }} />
             {ov("note") && rv(m, "note")}
             {!lm && onPromote && (
@@ -420,6 +450,33 @@ function AddValueInput({ onAdd }) {
   );
 }
 
+export function ObjectSymbolTabs({ groups, activeGroupId, selectedSymbolId, color, onSelectGroup, onSelectSymbol }) {
+  const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0];
+  if (!activeGroup) return null;
+  return (
+    <span style={{ display: "flex", flexDirection: "column", border: "1px solid var(--ink-faint)", background: "var(--paper-bright)" }}>
+      <span role="tablist" aria-label="Symbol topics" style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid var(--ink-faint)", scrollbarWidth: "thin" }}>
+        {groups.map((group) => {
+          const active = group.id === activeGroup.id;
+          return <button type="button" role="tab" key={group.id} data-testid={`symbol-tab-${group.id}`} aria-selected={active}
+            onClick={() => onSelectGroup(group.id)} title={group.label}
+            style={{ flex: "0 0 auto", padding: "4px 7px", border: "none", borderRadius: 0, borderBottom: active ? `2px solid ${color}` : "2px solid transparent", background: active ? "var(--paper)" : "transparent", color: active ? "var(--ink)" : "var(--ink-muted)", cursor: "pointer", fontSize: 9.5, fontWeight: active ? 700 : 500 }}>
+            {group.tab_label || group.label}
+          </button>;
+        })}
+      </span>
+      <span role="tabpanel" aria-label={`${activeGroup.label} symbols`} data-testid={`symbol-panel-${activeGroup.id}`}
+        style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "5px 6px 6px" }}>
+        {activeGroup.symbols.map((symbol) => <button type="button" key={symbol.id} title={symbol.label} aria-label={symbol.label}
+          onClick={() => onSelectSymbol(symbol.id)}
+          style={{ width: 28, height: 28, padding: 2, display: "inline-grid", placeItems: "center", borderRadius: 0, border: selectedSymbolId === symbol.id ? `2px solid ${color}` : "1px solid var(--ink-faint)", background: "var(--paper-bright)", color, cursor: "pointer" }}>
+          <ObjectSymbolPreview symbolId={symbol.id} color={color} size={20} />
+        </button>)}
+      </span>
+    </span>
+  );
+}
+
 // Appearance editor for ONE condition — tag, ×N, waste, line/fill color, hatch,
 // line style, height, thickness, and custom-column assignment. This is the row
 // that "used to live in its own toolbar row above the canvas"; extracted here so
@@ -446,6 +503,21 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
   // vertically; "row" (top-bar band, wide) flows them left-to-right so they use
   // the horizontal space instead of clumping in a corner, split by thin rules.
   const isRow = layout === "row";
+  const objectStyle = resolveObjectStyle(c);
+  const symbolGroups = objectSymbolsByGroup();
+  const selectedSymbolGroupId = symbolGroups.find((group) => group.symbols.some((symbol) => symbol.id === objectStyle.symbol_id))?.id || symbolGroups[0]?.id || null;
+  const selectedSymbol = symbolGroups.flatMap((group) => group.symbols).find((symbol) => symbol.id === objectStyle.symbol_id);
+  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
+  const [symbolTabId, setSymbolTabId] = useState(selectedSymbolGroupId);
+  useEffect(() => {
+    setSymbolTabId(selectedSymbolGroupId);
+  }, [c.id, selectedSymbolGroupId]);
+  useEffect(() => {
+    if (objectStyle.marker !== "symbol") setSymbolPickerOpen(false);
+  }, [objectStyle.marker]);
+  const patchObjectStyle = (patch) => onUpdateCond({
+    object_style: { ...(c.object_style && typeof c.object_style === "object" && !Array.isArray(c.object_style) ? c.object_style : {}), ...patch },
+  });
   const rule = () => <span aria-hidden style={{ width: 1, alignSelf: "stretch", background: "var(--ink-faint)", margin: "0 3px" }} />;
   return (
     <div style={isRow
@@ -472,6 +544,62 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
             {TRADE_SUITES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </label>
+      </div>
+      {isRow && rule()}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} title="Count-object marker and plan label. Existing projects default to the original color square.">
+        <span style={{ color: "var(--ink-muted)" }}>Object</span>
+        <select name="condition-object-marker" value={objectStyle.marker}
+          onChange={(e) => patchObjectStyle({ marker: e.target.value })}
+          style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+          <option value="square">Color square</option>
+          <option value="symbol">Built-in symbol</option>
+        </select>
+        {objectStyle.marker === "symbol" && (isRow ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+            <ObjectSymbolPreview symbolId={objectStyle.symbol_id} color={activeColor} size={20} />
+            <select name="condition-object-symbol" value={objectStyle.symbol_id}
+              onChange={(e) => patchObjectStyle({ symbol_id: e.target.value })}
+              style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+              {symbolGroups.map((group) => <optgroup key={group.id} label={group.label}>
+                {group.symbols.map((symbol) => <option key={symbol.id} value={symbol.id}>{symbol.label}</option>)}
+              </optgroup>)}
+            </select>
+          </span>
+        ) : (
+          <span style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 4 }}>
+            <button type="button" data-testid="symbol-picker-toggle" aria-expanded={symbolPickerOpen}
+              onClick={() => setSymbolPickerOpen((open) => !open)}
+              style={{ minHeight: 28, padding: "3px 6px", display: "flex", alignItems: "center", gap: 6, border: "1px solid var(--ink-faint)", borderRadius: 0, background: "var(--paper-bright)", color: "var(--ink)", cursor: "pointer", textAlign: "left", fontSize: 10.5 }}>
+              <ObjectSymbolPreview symbolId={objectStyle.symbol_id} color={activeColor} size={18} />
+              <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedSymbol?.label || "Choose symbol"}</span>
+              <span style={{ color: "var(--ink-muted)", fontSize: 9.5 }}>{symbolPickerOpen ? "Close ▴" : "Change ▾"}</span>
+            </button>
+            {symbolPickerOpen && <ObjectSymbolTabs groups={symbolGroups} activeGroupId={symbolTabId} selectedSymbolId={objectStyle.symbol_id}
+              color={activeColor} onSelectGroup={setSymbolTabId}
+              onSelectSymbol={(symbolId) => { patchObjectStyle({ symbol_id: symbolId }); setSymbolPickerOpen(false); }} />}
+          </span>
+        ))}
+        <span style={{ color: "var(--ink-muted)", marginLeft: 2 }}>Label</span>
+        <select name="condition-object-label" value={objectStyle.label_mode}
+          onChange={(e) => patchObjectStyle({ label_mode: e.target.value })}
+          style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px" }}>
+          <option value="none">None</option>
+          <option value="tag">Condition tag</option>
+          <option value="custom">Custom</option>
+          <option value="sequence">Sequential</option>
+        </select>
+        {objectStyle.label_mode === "custom" && <input name="condition-object-label-text" value={objectStyle.label_text}
+          onChange={(e) => patchObjectStyle({ label_text: e.target.value })} placeholder="plan label"
+          style={{ ...ip, width: 86 }} />}
+        {objectStyle.label_mode === "sequence" && <>
+          <input name="condition-object-label-prefix" value={sequenceObjectLabelPrefix(c)}
+            onChange={(e) => patchObjectStyle({ label_prefix: e.target.value })} placeholder="CAM-" title="Prefix written before each automatically assigned number; defaults from the condition tag"
+            style={{ ...ip, width: 66, fontFamily: "var(--f-mono)" }} />
+          <span style={{ color: "var(--ink-muted)" }}>next</span>
+          <input name="condition-object-label-next" type="number" min="1" step="1" value={Number.isInteger(c.object_style?.next_sequence) && c.object_style.next_sequence > 0 ? c.object_style.next_sequence : 1}
+            onChange={(e) => patchObjectStyle({ next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+            title="Next number assigned when an object is placed" style={{ ...ip, width: 52 }} />
+        </>}
       </div>
       {isRow && rule()}
       {isRow ? (
@@ -1132,7 +1260,7 @@ function TakeoffsPanel({
           style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, rowGap: 5, padding: "9px 12px", cursor: "pointer", outline: reassigning ? "1px dashed var(--cobalt)" : "none", outlineOffset: -3, userSelect: "none" }}>
           {hot && <span title={pinned ? `Palette shortcut — press ${hIdx + 1} to activate` : `Press ${hIdx + 1} to activate (pin to lock this number)`} style={{ fontSize: 9, fontFamily: "var(--f-mono,monospace)", color: pinned ? "var(--cobalt)" : "var(--ink-muted)", border: `1px solid ${pinned ? "var(--cobalt)" : "var(--ink-faint)"}`, borderRadius: 3, padding: "0 3px", flexShrink: 0 }}>{hIdx + 1}</span>}
           <ConditionEye tag={c.finish_tag} hidden={hidden} onToggle={(isolate) => onToggleHidden(c.id, isolate)} />
-          <span style={{ borderRadius: 4, overflow: "hidden", lineHeight: 0, flexShrink: 0, opacity: hidden ? 0.35 : 1 }}><HatchSwatch type={c.hatch || "solid"} line={c.color} fill={c.fill} /></span>
+          <span style={{ borderRadius: 4, overflow: "hidden", lineHeight: 0, flexShrink: 0, opacity: hidden ? 0.35 : 1 }}><ConditionMark condition={c} /></span>
           {/* the tag is the row's identity: it holds a floor (ROW_TAG_MIN_W) and
               the action cluster wraps under it on a narrow panel, instead of the
               tag collapsing to nothing beside buttons that never shrink */}
@@ -1280,7 +1408,7 @@ function TakeoffsPanel({
               twin={!!c.variant_of} parentTag={(conditions.find((x) => x.id === c.variant_of) || {}).finish_tag || ""}
               dropped={c.materials_dropped || []} parentRows={(conditions.find((x) => x.id === c.variant_of) || {}).materials || []}
               onFollowFamilyRow={onFollowFamilyRow} onRestoreDroppedRow={onRestoreDroppedRow}
-              heightFt={c.height_ft} />
+              heightFt={c.height_ft} units={units} />
             <AssemblyBar cond={c} assemblies={assemblies} onApply={onApplyAssembly} />
             {/* Duplicate, inline — deliberately NOT a window.prompt: those freeze a
                 CDP/automation-driven session dead, and this panel is scripted in demos. */}
@@ -1459,7 +1587,7 @@ function TakeoffsPanel({
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                   <div style={{ fontFamily: "var(--f-mono,monospace)", fontSize: 10.5, color: "var(--ink-muted)" }}>
-                    {a.items.map((it) => `${it.name} (${coverageLabel(it)})`).join(" · ")}
+                    {a.items.map((it) => `${it.name} (${coverageLabel(it, units)})`).join(" · ")}
                   </div>
                 </div>
                 <button onClick={() => { if (aCond && onApplyAssembly) onApplyAssembly(a); }} disabled={!aCond || !onApplyAssembly}
@@ -1502,18 +1630,26 @@ function TakeoffsPanel({
                     <span style={{ color: "var(--ink-muted)" }}>1</span>
                     <input name="library-material-unit" value={lm.unit} onChange={(e) => onUpdateLibMaterial(lm.id, { unit: e.target.value })} placeholder="unit" style={{ ...ip, width: 54 }} />
                     <span style={{ color: "var(--ink-muted)" }}>per</span>
-                    <LibDraftInput name="library-material-per" number value={lm.per || ""} placeholder="0" width={62}
-                      onCommitText={(t) => onUpdateLibMaterial(lm.id, { per: Math.max(0, parseFloat(t) || 0) })} />
-                    <select name="library-material-basis" value={lm.basis || "area"} onChange={(e) => onUpdateLibMaterial(lm.id, { basis: e.target.value })} style={{ ...ip, background: "var(--paper-bright)" }}>
-                      <option value="area">floor SF</option>
-                      <option value="linear">linear LF</option>
+                    <LibDraftInput name="library-material-per" number value={lm.per ? Number(coverageToDisplay(lm.per, lm.basis || "area", units).toFixed(6)) : ""} placeholder="0" width={62}
+                      onCommitText={(t) => {
+                        const shown = Math.max(0, parseFloat(t) || 0);
+                        onUpdateLibMaterial(lm.id, { per: coverageFromDisplay(shown, lm.basis || "area", units) });
+                      }} />
+                    <select name="library-material-basis" value={lm.basis || "area"} onChange={(e) => {
+                        const oldBasis = lm.basis || "area";
+                        const newBasis = e.target.value;
+                        const shown = coverageToDisplay(lm.per, oldBasis, units);
+                        onUpdateLibMaterial(lm.id, { basis: newBasis, per: coverageFromDisplay(shown, newBasis, units) });
+                      }} style={{ ...ip, background: "var(--paper-bright)" }}>
+                      <option value="area">{units === "metric" ? "floor m²" : "floor SF"}</option>
+                      <option value="linear">{units === "metric" ? "linear m" : "linear LF"}</option>
                       <option value="count">each</option>
-                      <option value="seam_lf" title="Figured seam length from the roll layout — 0 until the condition carries a roll setup">seam LF</option>
+                      <option value="seam_lf" title="Figured seam length from the roll layout — 0 until the condition carries a roll setup">{units === "metric" ? "seam m" : "seam LF"}</option>
                     </select>
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--ink-muted)" }} title="Round up to whole units">
                       <input name="library-material-round" type="checkbox" checked={lm.round !== false} onChange={(e) => onUpdateLibMaterial(lm.id, { round: e.target.checked })} />round up
                     </label>
-                    <CoveragePresetSelect material={lm} onPick={(patch) => onUpdateLibMaterial(lm.id, patch)} />
+                    <CoveragePresetSelect material={lm} units={units} onPick={(patch) => onUpdateLibMaterial(lm.id, patch)} />
                     <LibDraftInput name="library-material-note" value={lm.note || ""} placeholder="note" width={120}
                       onCommitText={(t) => onUpdateLibMaterial(lm.id, { note: t })} />
                   </div>

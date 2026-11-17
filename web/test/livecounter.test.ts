@@ -39,6 +39,26 @@ test("counterRows: LF and EA roles land under their units", () => {
   assert.deepEqual(rows.find((r: any) => r.id === "c3")!.qtys, [{ qty: 2, unit: "EA" }]);
 });
 
+test("counterRows: metric mode converts area and linear quantities, EA unchanged", () => {
+  const metricRows = counterRows(
+    conditionTotals(conds, shapes),
+    "c2",
+    "metric"
+  );
+
+  const c1 = metricRows.find((r: any) => r.id === "c1")!;
+  const c2 = metricRows.find((r: any) => r.id === "c2")!;
+  const c3 = metricRows.find((r: any) => r.id === "c3")!;
+
+  assert.equal(c1.qtys[0].unit, "m²");
+  assert.ok(Math.abs(c1.qtys[0].qty - 92.90304) < 1e-10);
+
+  assert.equal(c2.qtys[0].unit, "m");
+  assert.ok(Math.abs(c2.qtys[0].qty - 25.6794) < 1e-10);
+
+  assert.deepEqual(c3.qtys, [{ qty: 2, unit: "EA" }]);
+});
+
 test("counterRows: the active flag follows the id", () => {
   assert.deepEqual(rows.map((r: any) => r.active), [false, true, false]);
 });
