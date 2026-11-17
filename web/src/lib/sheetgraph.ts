@@ -23,14 +23,14 @@
 import { ROOM_LABEL_RE } from "./detectRooms";
 import { FINISH_SECTION_HEADINGS, finishSectionOf, type FinishSection } from "./finishSections";
 import { normalizeNotUsed, normalizeTail } from "./notUsed";
-import { CODE_RE, finishCodeOk } from "./finishCode";
+import { CODE_RE, finishCodeOk, finishKeyText } from "./finishCode";
 
 /** rot: text rotation in degrees, clockwise in device space (y down). Absent
  * or 0 = horizontal; 90/270 = a quarter-turn — the rotated-header case. When
  * rot is not provided (older span sources), a span at least four characters
  * long whose box is more than twice as tall as it is wide is treated as
  * vertical — a real horizontal token that long cannot be taller than wide. */
-export interface GraphSpan { str: string; x: number; y: number; w: number; h: number; rot?: number }
+export interface GraphSpan { str: string; x: number; y: number; w: number; h: number; rot?: number; codeAlternate?: string }
 /** segs (optional): the sheet's vector linework as flat [x1,y1,x2,y2, ...] in
  * the same px space as the spans (VectorGeometry.segs) — feeds the drawn
  * delta-triangle hunt. Text-only callers omit it and lose only that lane. */
@@ -761,7 +761,8 @@ export const isNonFinishSchedule = (title: string): boolean => {
 };
 
 function rowKeyOf(raw: string, kind: ExtractKind, buildings?: Set<string>, typeKeyed = false): { key: string; building?: string } | null {
-  const kept = norm(raw).replace(/[^A-Z0-9/-]/g, "");
+  const source = kind === "finish" ? finishKeyText(norm(raw)) : norm(raw);
+  const kept = source.replace(kind === "finish" ? /[^A-Z0-9/()-]/g : /[^A-Z0-9/-]/g, "");
   const key = kept.replace(/\//g, "");
   if (kind === "equipment") {
     // "EF-1 / EF-2" keys one row for two marks the same way a finish row does
@@ -801,16 +802,28 @@ const SPLIT_DENY = new Set(["SEE", "NOTE", "NOTES", "NOT", "USED", "BY", "OWNER"
 // a qualifier naming an alternate keeps today's glued key (CPT-1ALT): it is a different item
 const ALT_WORDS = new Set(["ALT", "OPT", "OPTION", "ADD", "DEDUCT"]);
 function splitKeyCell(raw: string): KeySplit | null {
-  const r = raw.trim();
+  // A suffix belongs to the code, including when pdf.js/OCR split its
+  // parentheses with spaces. A later qualifier (FTB-01 CUT (C)) stays text.
+  const r = raw.trim().replace(/^([A-Z]{1,4}-?[A-Z0-9]{0,4})\s*\(\s*([A-Z0-9]{1,4})\s*\)/i,
+    (whole, base: string, suffix: string) => finishCodeOk(`${base}(${suffix})`.toUpperCase()) ? `${base}(${suffix})` : whole);
   const sp = r.search(/\s/);
-  const w1 = (sp < 0 ? r : r.slice(0, sp)).toUpperCase().replace(/[:,;]+$/, "");
+  let w1 = (sp < 0 ? r : r.slice(0, sp)).toUpperCase().replace(/[:,;]+$/, "");
+  let rest = sp < 0 ? "" : r.slice(sp);
+  // a word of three or more letters OCR glued to the code (FTB-03ALTCUT):
+  // only when the whole token isn't a code itself (CPT-1ALT, P-1SAT are)
+  const glued = finishCodeOk(w1) ? null : w1.match(/^([A-Z]{1,4}-\d{1,3})([A-Z]{3,8})$/);
+  if (glued) { w1 = glued[1]; rest = ` ${glued[2]}${rest}`; }
   if (!finishCodeOk(w1) || !/\d/.test(w1)) return null;
-  const after = sp < 0 ? "" : r.slice(sp).replace(/^[-–—:,\s]+/, "");
+  // a closing surface suffix as OCR spaces it, or glued to the word before
+  // it: CUT(C), COVE (W ), CUT( W) → CUT (C), COVE (W), CUT (W)
+  const after = rest.replace(/^[-–—:,\s]+/, "").replace(/\s*\(\s*([A-Z0-9]{1,2})\s*\)\s*$/i, (_m, s: string) => ` (${s.toUpperCase()})`).trim();
   const tail = normalizeTail(after);
   if (tail === "NOT USED" || tail === "NOT IN CONTRACT" || tail === "NIC") return { key: w1, notUsed: true, notUsedText: after };
   const words = tail ? tail.split(" ") : [];
-  if (words.length < 1 || words.length > 2) return null;
-  if (!words.every((w) => /^[A-Z]{2,8}$/.test(w) || /^\([A-Z]{1,8}\)$/.test(w))) return null;
+  // one or two words, or two words and a closing surface suffix (ALT CUT (C))
+  const suffixLast = words.length === 3 && /^\([A-Z]{1,2}\)$/.test(words[2]) && words.slice(0, 2).every((w) => /^[A-Z]{2,8}$/.test(w));
+  if (words.length < 1 || (words.length > 2 && !suffixLast)) return null;
+  if (!words.every((w) => /^[A-Z]{2,8}$/.test(w) || /^\([A-Z]{1,8}\.?\)$/.test(w))) return null;
   const bare = words.map((w) => w.replace(/[()]/g, ""));
   if (bare.some((w) => SPLIT_DENY.has(w)) || bare.join("").length < 3) return null;
   return { key: w1, qualifier: after };
@@ -1647,9 +1660,14 @@ function bandDataRows(
   const keyHdr = cfg.hdrSpans?.find((t) => t.x - 0.5 <= anchors[0].x && anchors[0].x <= t.x + (t.w || 0) + 0.5);
   const keyRefX = keyXs.length ? keyXs[(keyXs.length - 1) >> 1] : keyHdr ? keyHdr.x : anchors[0].x;
   const textH = (toks: GraphSpan[]) => { const hs = toks.map((t) => t.h || 8).sort((p, q) => p - q); return hs[hs.length >> 1]; };
-  const aligned = (t: GraphSpan, h: number) => inKey(t) && (cols ? Math.abs(atOf(t) - cols.cols[0].start) <= keyTol : Math.abs(t.x - keyRefX) <= Math.max(8, 0.5 * h));
+  // with no column map, a key column is left- or centre-aligned: a longer
+  // key (FTB-01 CUT (C)) under centred codes starts left of them
+  const keyCXs = P1.outToks.map((t) => centerX(t[0])).sort((p, q) => p - q);
+  const keyRefCX = keyCXs.length ? keyCXs[(keyCXs.length - 1) >> 1] : null;
+  const aligned = (t: GraphSpan, h: number) => inKey(t) && (cols ? Math.abs(atOf(t) - cols.cols[0].start) <= keyTol
+    : Math.abs(t.x - keyRefX) <= Math.max(8, 0.5 * h) || (keyRefCX != null && Math.abs(centerX(t) - keyRefCX) <= Math.max(8, 0.5 * h)));
   const gapAbove = (y: number) => { let above = -Infinity; for (const ly of lineYs) if (ly < y && ly > above) above = ly; return y - above; };
-  type Eligible = { i: number; y: number; toks: GraphSpan[]; att: number; gap: number };
+  type Eligible = { i: number; y: number; toks: GraphSpan[]; att: number; gap: number; ocrRow?: boolean };
   const eligible: Eligible[] = [];
   // On-device (OCR) words (cfg.ocr) take no unglue candidates and no letters
   // candidates: the engine's word boxes are shorter
@@ -1664,6 +1682,13 @@ function bandDataRows(
       if (!aligned(o.toks[0], h)) continue;
       const att = orphanLine1.get(o.i) ?? -1, gap = gapAbove(o.y);
       if (att < 0 || (!ocr && gap >= Math.max(1.6 * h, 0.75 * linePitch))) eligible.push({ i: o.i, y: o.y, toks: o.toks, att, gap });
+      // On OCR words a merged line is still a row when it prints a whole
+      // row: a code with a qualifier (FTB-01 CUT (C)) and its own cells in
+      // two or more other columns on the same line. A key-column wrap
+      // (PT-2 SATIN under a row) has no cells beside it and stays merged.
+      else if (ocr && splitKeyCell(o.toks[0].str) && new Set(o.toks.slice(1).map(columnOf).filter((l) => l !== keyCol)).size >= 2) {
+        eligible.push({ i: o.i, y: o.y, toks: o.toks, att, gap, ocrRow: true });
+      }
     }
   }
   // ── decide ──
@@ -1775,7 +1800,20 @@ function bandDataRows(
   }
   const runHasSection = walk.some((w) => w.kind === "head" && reachedDown.has(w) && P1.headings[w.at].section != null);
   const newReached = new Set(walk.filter((w) => w.kind === "new" && reached.has(w)).map((w) => w.at));
-  const surviving = newRule.filter((_n, k) => newReached.has(k));
+  // The collision rule on the new lines too: a qualifier line whose code
+  // another new line or one of today's rows also keys (FTB-01 CUT (C) beside
+  // FTB-01 CUT (W), or beside a plain FTB-01 row) keys glued, FTB-01CUT(C),
+  // as today's glued twins do (P-1SAT, P-1EGG): two items, never one code
+  // read twice, and a surface suffix stays in the key.
+  const reachedNew = newRule.filter((_n, k) => newReached.has(k));
+  const p1Keys = new Set(P1.out.map((r, k) => { const s = splitKeyCell(P1.outToks[k][0].str); return s?.notUsed ? s.key : r.key; }));
+  const surviving = reachedNew.map((n) => {
+    if (n.s.qualifier == null) return n;
+    const clash = p1Keys.has(n.s.key) || reachedNew.some((o) => o !== n && o.s.key === n.s.key);
+    if (!clash) return n;
+    const key = finishKeyText(`${n.s.key} ${n.s.qualifier}`.toUpperCase()).replace(/[^A-Z0-9/()-]/g, "");
+    return { e: n.e, s: { key } };
+  });
   // The same split on today's rows (their first key-column token): a NOT USED tail
   // re-keys in place; a qualifier splits only under the collision rule —
   // never when the split key is any other row's key in the read, or another
@@ -2723,7 +2761,9 @@ export function resolveTag(graph: SheetGraph, tag: string): ResolveResult {
   for (const surface of surfaces) {
     const cell = r.cells[surface];
     if (!cell || !cell.text.trim()) continue;
-    const code = norm(cell.text).replace(/[^A-Z0-9-]/g, "");
+    // keyed the way rowKeyOf keys the finish table's rows, so G-01(C) finds
+    // its definition and PT-1 (CUT) reads as before #499
+    const code = finishKeyText(norm(cell.text)).replace(/[^A-Z0-9()-]/g, "");
     const fin: ResolvedFinish = { surface, code: cell.text.trim(), source: { sheet: r.sheet, text: cell.text.trim(), bbox: cell.bbox } };
     for (const ft of finTables) {
       const def = ft.rows.find((fr) => rowKeyAnswersFor(fr.key, code));

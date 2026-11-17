@@ -7,7 +7,8 @@ import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server
 import { ok, okImage, fail, UserError, type ToolReply } from "./format.ts";
 import { oneClickEnabled, GATE_HINT } from "./gate.ts";
 import { UNDO_CAP, CONTEXT_MIN_LEN_PX, CONTEXT_MAX_SEGMENTS, CONTEXT_MAX_SEGMENTS_CEIL, VECTORS_DEFAULT_LIMIT, VECTORS_LIMIT_CEIL, type Session } from "./session.ts";
-import { traceToolCall } from "./trace.ts";
+import { traceToolCall, toolCallSinks } from "./trace.ts";
+import { AssistantBridge, LISTEN_DEFAULT_S, LISTEN_MAX_S, IDLE_SLEEP_MS } from "./assistantBridge.ts";
 import {
   loadPlanOutput, sheetInfoOutput, setScaleOutput, oneClickOutput, detectRoomsOutput,
   measurePolygonOutput, measureLineOutput, measureSurfaceOutput, placeCountOutput, symbolSweepOutput, takeoffSummaryOutput,
@@ -24,10 +25,16 @@ import {
   proposeTakeoffOutput, reviseProposalOutput, withdrawProposalOutput,
   proposeConditionEditOutput, withdrawConditionEditOutput,
   scopeDuplicatesOutput, scopeMergeOutput,
+  setPricingOutput, setEstimateSettingsOutput, estimateSummaryOutput, exportEstimateOutput, exportProposalOutput,
+  assistantOpenOutput, assistantListenOutput, assistantSayOutput,
+  rotatePageOutput, reorderPagesOutput, extractPagesOutput, mergeDocumentsOutput,
+  stitchSheetsOutput, alignStitchOutput, listStitchesOutput,
 } from "./outputs.ts";
 import { exportMarkedPdf } from "./marked.ts";
+import { exportEstimateFile, exportProposalFile } from "./estimateFiles.ts";
 import { assertWritable, OVERWRITE_DESC } from "./safewrite.ts";
 import { importTakeoff } from "./importing.ts";
+import { registerSuites } from "./suites.ts";
 
 // The coordinate contract, stated on every tool so any agent reading any one
 // description knows the space it is working in.
@@ -60,7 +67,7 @@ const run = (tool: string, fn: (args: any) => unknown | Promise<unknown>) =>
 // Returns every RegisteredTool by name so staged exposure (#230) can disable
 // and re-enable groups after the fact. The wrapper keeps all forty call sites
 // below byte-identical: `server` here is a recording facade over the real one.
-export function registerTools(realServer: McpServer, session: Session, opts: { oneClick?: boolean } = {}): Map<string, RegisteredTool> {
+export function registerTools(realServer: McpServer, session: Session, opts: { oneClick?: boolean; suites?: string[] | "all" } = {}): Map<string, RegisteredTool> {
   // The TEMPORARY One-Click gate (src/gate.ts): on a default build one_click and
   // detect_rooms are not registered at all, and every description that used to
   // point an agent at them points at measure_polygon instead.
@@ -74,6 +81,48 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
     },
     sendResourceListChanged: () => realServer.sendResourceListChanged(),
   };
+  // ── the Assistant window (assistantBridge.ts): talk to this AI from inside the OpenTakeoff canvas ──
+  const bridge = new AssistantBridge(() => {
+    const v = (realServer as unknown as { server?: { getClientVersion?: () => { name?: string; version?: string } | undefined } }).server?.getClientVersion?.();
+    return { name: v?.name || "your AI app", version: v?.version || "" };
+  });
+  toolCallSinks.push((tool, okd, ms) => bridge.activity(tool, okd, ms));
+  server.registerTool("assistant_open", {
+    description: "Open the OpenTakeoff Assistant window: the person can then talk to YOU from inside the OpenTakeoff canvas (opentakeoff.kentucky-ai.com) instead of only here. Starts a private link on 127.0.0.1 and returns a one-time pairing `code` and a `link`. Give the person the link (or the 6-letter code to type into the canvas's Assistant window), then call assistant_listen and keep calling it: each message they type arrives as its result; do the work with the other tools, answer with assistant_say, then listen again. Call it when the person asks for the OpenTakeoff assistant/window, or says \"listen\" after a pause.",
+    inputSchema: {},
+    outputSchema: assistantOpenOutput,
+  }, run("assistant_open", async () => {
+    const o = await bridge.open();
+    return { ...o, next: o.already_paired
+      ? "Already paired — the window is live. Call assistant_listen now."
+      : `Tell the person: open ${o.link} (or, in the canvas, Assistant → enter code ${o.code}). Then call assistant_listen.` };
+  }));
+  server.registerTool("assistant_listen", {
+    description: `Wait for the person's next message in the OpenTakeoff Assistant window (after assistant_open). Returns status "message" with their text — do what they ask (with the other tools), reply with assistant_say, then call assistant_listen again. Status "timeout" = nothing typed yet: call assistant_listen again right away, saying nothing to the person. Status "sleep" = ${IDLE_SLEEP_MS / 60000} quiet minutes: stop listening and tell the person in one line to say "listen" when they want you back (then call assistant_open, which reconnects without a new code).`,
+    inputSchema: {
+      wait_s: z.number().int().min(1).max(LISTEN_MAX_S).optional().describe(`Seconds to wait (default ${LISTEN_DEFAULT_S}, max ${LISTEN_MAX_S}). Keep it under your client's tool timeout.`),
+    },
+    outputSchema: assistantListenOutput,
+  }, async (args: { wait_s?: number }, extra: { _meta?: { progressToken?: string | number }; sendNotification?: (n: unknown) => Promise<void> }) => {
+    const startedAt = process.hrtime.bigint();
+    let reply: ToolReply;
+    try {
+      const token = extra?._meta?.progressToken;
+      // progress pings keep clients that reset their timeout on progress from cutting a long wait short
+      const onTick = token !== undefined && extra.sendNotification
+        ? (s: number) => { extra.sendNotification!({ method: "notifications/progress", params: { progressToken: token, progress: s, message: "waiting for the person in the OpenTakeoff window" } }).catch(() => {}); }
+        : undefined;
+      reply = ok(await bridge.waitForMessage(args.wait_s ?? LISTEN_DEFAULT_S, onTick));
+    } catch (e) { reply = fail(e); }
+    traceToolCall("assistant_listen", args, startedAt, reply);
+    return reply;
+  });
+  server.registerTool("assistant_say", {
+    description: "Show your reply in the OpenTakeoff Assistant window (Markdown). Use it for every answer to a message that came through assistant_listen — the person is reading the window, not this chat. Then call assistant_listen again.",
+    inputSchema: { text: z.string().min(1).describe("Your reply, Markdown") },
+    outputSchema: assistantSayOutput,
+  }, run("assistant_say", ({ text }) => bridge.say(text)));
+
   server.registerTool("load_plan", {
     description: `Open a plan PDF from disk. Default: replace the whole session (previous documents, scales, conditions, and shapes are cleared). merge: true ADDS the document to the working set instead (#152) — a bid set is plans + schedule + addenda, not one PDF — keeping every scale, condition, and shape; sheet keys carry file names so documents never collide, the sheet graph spans the whole set (resolve_tag can chain a plan tag on one file to a schedule row in another), and the marked set covers every worked sheet. Re-loading an already-merged file is refused — reload = replace, deliberately. Returns file, files, page_count, and one entry per sheet. The loaded sheets also become browsable resources (takeoff://sheets). ${COORDS}`,
     inputSchema: {
@@ -111,42 +160,42 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
   }));
 
   if (oneClick) {
-  server.registerTool("one_click", {
-    description: `One-Click Area: click inside a room (image px) and the plan's vector linework bounds it — the sealed flood engine (RFC #60), contour trace, vertices snapped to true PDF endpoints. The engine's arguments are FEET-TRUE through the sheet's scale, exactly the canvas's: gap sealing bridges up to a door-width opening (disclosed as gap_sealed_px — that much boundary is synthetic), door-swing wedges annex the swing a doorway sweeps (door_wedges), and the minimum-passage rule keeps sub-half-foot slits from conjoining two rooms (min_pass_px/min_pass_delta). Every trace carries the engine's own account of itself: confidence (0..1, with confidence_factors naming what deducted) — a review PRIORITIZER, never a verification. 1.0 means every signal ran clean, not that the trace is right; a LOW confidence is a view_sheet {overlay: true} audit prompt, not a fact to bid from — put eyes on the flagged edge before the total means anything. SCANNED sheets work too (#154): where vectors can't bound the room (an image-only scan, or a scan wrapper whose only linework is the title block), the flood falls back automatically to the sheet's rendered pixels — same engine the canvas uses — and the reply plus the committed shape's origin carry raster_traced: true so a pixel-bounded ring is never mistaken for a vector-snapped one. Vector always wins where it works; a raster ring's corners are unsnapped, so audit it with view_sheet {overlay: true} before trusting the total. With the sheet's scale set, returns area_sf / perimeter_lf; pass condition (a finish tag, e.g. "CPT-1") to commit the traced shape to the takeoff — the full engine account rides the committed shape's origin, so the export tells the truth about how each shape was made. Without a scale it returns px-only quantities with a warning and commits nothing (the engine also degrades to its scale-blind fallbacks — a weaker measurement, one more reason set_scale comes first). role "deduct" makes the committed shape subtract. After committing, LOOK at what landed — view_sheet {overlay: true} — and fix an overshot ring with edit_shape before trusting any total. ${COORDS}`,
-    inputSchema: {
-      sheet: z.string(),
-      x: z.number(),
-      y: z.number(),
-      condition: z.string().optional().describe("Finish tag to commit under (minted on first use)"),
-      role: roleSchema,
-      return_verts: z.boolean().default(false).describe("Include the traced polygon's vertices (image px)"),
-      sensitivity: z.number().min(0).max(1).optional().describe("Fill sensitivity, the same knob the canvas has: 0 strict (hatch/light linework always blocks), 0.5 balanced (default), 1 aggressive (crosses more hatch, tolerates more growth). Raise it when a flood stops short at hatching INSIDE the room; verify the grown ring with view_sheet overlay before committing"),
-      layers: layersFilterSchema,
-    },
-    outputSchema: oneClickOutput,
-  }, run("one_click", (a) => session.oneClick(a.sheet, a.x, a.y, { condition: a.condition, role: a.role, returnVerts: a.return_verts, sensitivity: a.sensitivity, layers: a.layers })));
+    server.registerTool("one_click", {
+      description: `One-Click Area: click inside a room (image px) and the plan's vector linework bounds it — the sealed flood engine (RFC #60), contour trace, vertices snapped to true PDF endpoints. The engine's arguments are FEET-TRUE through the sheet's scale, exactly the canvas's: gap sealing bridges up to a door-width opening (disclosed as gap_sealed_px — that much boundary is synthetic), door-swing wedges annex the swing a doorway sweeps (door_wedges), and the minimum-passage rule keeps sub-half-foot slits from conjoining two rooms (min_pass_px/min_pass_delta). Every trace carries the engine's own account of itself: confidence (0..1, with confidence_factors naming what deducted) — a review PRIORITIZER, never a verification. 1.0 means every signal ran clean, not that the trace is right; a LOW confidence is a view_sheet {overlay: true} audit prompt, not a fact to bid from — put eyes on the flagged edge before the total means anything. SCANNED sheets work too (#154): where vectors can't bound the room (an image-only scan, or a scan wrapper whose only linework is the title block), the flood falls back automatically to the sheet's rendered pixels — same engine the canvas uses — and the reply plus the committed shape's origin carry raster_traced: true so a pixel-bounded ring is never mistaken for a vector-snapped one. Vector always wins where it works; a raster ring's corners are unsnapped, so audit it with view_sheet {overlay: true} before trusting the total. With the sheet's scale set, returns area_sf / perimeter_lf; pass condition (a finish tag, e.g. "CPT-1") to commit the traced shape to the takeoff — the full engine account rides the committed shape's origin, so the export tells the truth about how each shape was made. Without a scale it returns px-only quantities with a warning and commits nothing (the engine also degrades to its scale-blind fallbacks — a weaker measurement, one more reason set_scale comes first). role "deduct" makes the committed shape subtract. After committing, LOOK at what landed — view_sheet {overlay: true} — and fix an overshot ring with edit_shape before trusting any total. ${COORDS}`,
+      inputSchema: {
+        sheet: z.string(),
+        x: z.number(),
+        y: z.number(),
+        condition: z.string().optional().describe("Finish tag to commit under (minted on first use)"),
+        role: roleSchema,
+        return_verts: z.boolean().default(false).describe("Include the traced polygon's vertices (image px)"),
+        sensitivity: z.number().min(0).max(1).optional().describe("Fill sensitivity, the same knob the canvas has: 0 strict (hatch/light linework always blocks), 0.5 balanced (default), 1 aggressive (crosses more hatch, tolerates more growth). Raise it when a flood stops short at hatching INSIDE the room; verify the grown ring with view_sheet overlay before committing"),
+        layers: layersFilterSchema,
+      },
+      outputSchema: oneClickOutput,
+    }, run("one_click", (a) => session.oneClick(a.sheet, a.x, a.y, { condition: a.condition, role: a.role, returnVerts: a.return_verts, sensitivity: a.sensitivity, layers: a.layers })));
 
-  server.registerTool("detect_rooms", {
-    description: `Batch room detection: reads every room-number label off the sheet's text layer (e.g. "134", "OFFICE 101") and runs One-Click at each — one call instead of read_sheet_text + reasoning + N one_click calls. An OCR'd scan (text layer, no vector linework) floods the rendered pixels instead (#154), disclosed per room and on origin as raster_traced. A seed is only reported as a room once it survives three gates, and everything skipped is counted and reasoned in \`withheld\` — never dropped silently, because a room the tool tells you it skipped is a question you can ask, while one it hides is a hole in a bid. The gates: a flood that leaked or landed in dense linework never becomes a region; two labels flooding the SAME region commit once (the extra labels ride on \`merged_labels\` — double-counting an area is the worst failure an estimating tool has); and a flood that is enclosed and clean but smaller than min_area_sf is a room-number bubble, a door swing, or a wall cavity rather than a room. Every room floods through the SAME sealed engine a single one_click runs (RFC #60 — feet-true gap sealing, door-swing wedges, the minimum-passage rule), so a batch detection and a click at the same seed measure the same square footage; each room carries the engine's account of its own trace (confidence + confidence_factors, gap_sealed_px, door_wedges, min_pass_px/min_pass_delta), and the same account rides origin on everything committed. Confidence is a review prioritizer, never a verification — a low-confidence room is a view_sheet {overlay: true} audit prompt, not a fact to bid from. With the sheet's scale set, returns area_sf/perimeter_lf per room. Every committed room carries the room number it was traced from as the shape's \`label\`, so a sweep arrives already sliced by room — that field is what the Report's per-room grouping and the workbook's floor × room tab read, and it is the one thing about a batch that cannot be recovered downstream if it is dropped. TO COMMIT, choose the honest source of the finish tag: assign_from_schedule: true routes every room through its OWN room-finish schedule row and commits each under the FLOOR finish that row states — when a schedule exists in the set, THIS is the default move, because one agent-chosen tag across N rooms flattens real finish variety into a wrong bid; condition commits every room under that one stated tag (only right when the rooms genuinely share it; role "deduct" makes them subtract). Without a scale, returns px-only quantities per room and commits nothing — the plausibility floor needs real units, so it only applies once a scale is set. A batch commit is NOT finished until you have LOOKED at it: view_sheet {overlay: true}, audit every ring against the walls, fix misses with edit_shape / delete_shape — before the totals mean anything. ${COORDS}`,
-    inputSchema: {
-      sheet: z.string(),
-      condition: z.string().optional().describe("Finish tag to commit every detected room under (minted on first use). Mutually exclusive with assign_from_schedule"),
-      assign_from_schedule: z.boolean().default(false).describe("Commit each room under the FLOOR finish its OWN room-finish schedule row states (resolve_tag's chain, per room): the citation rides origin.assignment, and rooms the schedule cannot answer for — no row, no FLOOR cell, a compound cell like \"CPT-1/VCT-1\" — are returned in unresolved[] with reasons and seeds instead of committed under a guess. Needs the sheet's scale and a room-finish schedule in the working set (merge the schedule sheet in with load_plan first). Mutually exclusive with condition"),
-      role: roleSchema,
-      return_verts: z.boolean().default(false).describe("Include each traced polygon's vertices (image px)"),
-      min_area_sf: z.number().positive().default(5).describe("Plausibility floor: enclosed non-bubble regions smaller than this are withheld as cavities, not rooms. Default 5 SF — below any real finished space (a broom closet is ~10 SF). Lower it to inspect what was skipped."),
-      sensitivity: z.number().min(0).max(1).optional().describe("Fill sensitivity, the same knob the canvas has: 0 strict (hatch/light linework always blocks), 0.5 balanced (default), 1 aggressive (crosses more hatch, tolerates more growth). Raise it when a flood stops short at hatching INSIDE the room; verify the grown ring with view_sheet overlay before committing"),
-      layers: layersFilterSchema,
-    },
-    outputSchema: detectRoomsOutput,
-  }, run("detect_rooms", (a) => {
-    // the set_scale "exactly one of" convention: both sources of a finish tag
-    // at once is a contradiction, refused before any flooding
-    if (a.assign_from_schedule && a.condition !== undefined) {
-      throw new UserError("Provide at most one of: condition (every room under one stated tag) or assign_from_schedule (each room's own schedule row decides).");
-    }
-    return session.detectRooms(a.sheet, { condition: a.condition, role: a.role, returnVerts: a.return_verts, minAreaSf: a.min_area_sf, sensitivity: a.sensitivity, layers: a.layers, assignFromSchedule: a.assign_from_schedule });
-  }));
+    server.registerTool("detect_rooms", {
+      description: `Batch room detection: reads every room-number label off the sheet's text layer (e.g. "134", "OFFICE 101") and runs One-Click at each — one call instead of read_sheet_text + reasoning + N one_click calls. An OCR'd scan (text layer, no vector linework) floods the rendered pixels instead (#154), disclosed per room and on origin as raster_traced. A seed is only reported as a room once it survives three gates, and everything skipped is counted and reasoned in \`withheld\` — never dropped silently, because a room the tool tells you it skipped is a question you can ask, while one it hides is a hole in a bid. The gates: a flood that leaked or landed in dense linework never becomes a region; two labels flooding the SAME region commit once (the extra labels ride on \`merged_labels\` — double-counting an area is the worst failure an estimating tool has); and a flood that is enclosed and clean but smaller than min_area_sf is a room-number bubble, a door swing, or a wall cavity rather than a room. Every room floods through the SAME sealed engine a single one_click runs (RFC #60 — feet-true gap sealing, door-swing wedges, the minimum-passage rule), so a batch detection and a click at the same seed measure the same square footage; each room carries the engine's account of its own trace (confidence + confidence_factors, gap_sealed_px, door_wedges, min_pass_px/min_pass_delta), and the same account rides origin on everything committed. Confidence is a review prioritizer, never a verification — a low-confidence room is a view_sheet {overlay: true} audit prompt, not a fact to bid from. With the sheet's scale set, returns area_sf/perimeter_lf per room. Every committed room carries the room number it was traced from as the shape's \`label\`, so a sweep arrives already sliced by room — that field is what the Report's per-room grouping and the workbook's floor × room tab read, and it is the one thing about a batch that cannot be recovered downstream if it is dropped. TO COMMIT, choose the honest source of the finish tag: assign_from_schedule: true routes every room through its OWN room-finish schedule row and commits each under the FLOOR finish that row states — when a schedule exists in the set, THIS is the default move, because one agent-chosen tag across N rooms flattens real finish variety into a wrong bid; condition commits every room under that one stated tag (only right when the rooms genuinely share it; role "deduct" makes them subtract). Without a scale, returns px-only quantities per room and commits nothing — the plausibility floor needs real units, so it only applies once a scale is set. A batch commit is NOT finished until you have LOOKED at it: view_sheet {overlay: true}, audit every ring against the walls, fix misses with edit_shape / delete_shape — before the totals mean anything. ${COORDS}`,
+      inputSchema: {
+        sheet: z.string(),
+        condition: z.string().optional().describe("Finish tag to commit every detected room under (minted on first use). Mutually exclusive with assign_from_schedule"),
+        assign_from_schedule: z.boolean().default(false).describe("Commit each room under the FLOOR finish its OWN room-finish schedule row states (resolve_tag's chain, per room): the citation rides origin.assignment, and rooms the schedule cannot answer for — no row, no FLOOR cell, a compound cell like \"CPT-1/VCT-1\" — are returned in unresolved[] with reasons and seeds instead of committed under a guess. Needs the sheet's scale and a room-finish schedule in the working set (merge the schedule sheet in with load_plan first). Mutually exclusive with condition"),
+        role: roleSchema,
+        return_verts: z.boolean().default(false).describe("Include each traced polygon's vertices (image px)"),
+        min_area_sf: z.number().positive().default(5).describe("Plausibility floor: enclosed non-bubble regions smaller than this are withheld as cavities, not rooms. Default 5 SF — below any real finished space (a broom closet is ~10 SF). Lower it to inspect what was skipped."),
+        sensitivity: z.number().min(0).max(1).optional().describe("Fill sensitivity, the same knob the canvas has: 0 strict (hatch/light linework always blocks), 0.5 balanced (default), 1 aggressive (crosses more hatch, tolerates more growth). Raise it when a flood stops short at hatching INSIDE the room; verify the grown ring with view_sheet overlay before committing"),
+        layers: layersFilterSchema,
+      },
+      outputSchema: detectRoomsOutput,
+    }, run("detect_rooms", (a) => {
+      // the set_scale "exactly one of" convention: both sources of a finish tag
+      // at once is a contradiction, refused before any flooding
+      if (a.assign_from_schedule && a.condition !== undefined) {
+        throw new UserError("Provide at most one of: condition (every room under one stated tag) or assign_from_schedule (each room's own schedule row decides).");
+      }
+      return session.detectRooms(a.sheet, { condition: a.condition, role: a.role, returnVerts: a.return_verts, minAreaSf: a.min_area_sf, sensitivity: a.sensitivity, layers: a.layers, assignFromSchedule: a.assign_from_schedule });
+    }));
   }
 
   server.registerTool("propose_takeoff", {
@@ -369,6 +418,75 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
     return doc;
   }));
 
+  // ── estimate (lib/estimate.js) — the prices are the estimator's ──────────
+  const NO_INVENTED_PRICES = "Every price comes from the estimator or a document they gave you — never invent, estimate or 'typical' one; a price nobody entered stays unentered and estimate_summary names it.";
+  server.registerTool("set_pricing", {
+    description: `Price one condition for the estimate — the canvas Estimate panel's rows. A condition has one estimate line per quantity kind it carries (its area, LF and EA — see estimate_summary); the first is its MAIN line. unit is what the main line is bought in (SF, SY, LF, EA). line picks WHICH line material and labor price: leave it out (or pass the main line's unit) for the main line; pass "LF", "EA" or "SF" (a second area line prices in SF) to price that other line — one call per line. material and labor are $ per that line's unit: material is priced on the ORDER quantity (waste applied — SY is the waste-adjusted SY), labor on the MEASURED quantity (no waste); EA carries no waste on either. materials prices the condition's supporting-material rows (from edit_materials) per THEIR unit (bag, pail, roll) — quantities are already whole packages. null clears a price back to "not entered"; 0 is an explicit $0 (owner-furnished material, labor-only scope). A bordered linear run's derived second line (its LF when the border SF is the main line, or the reverse) is OPTIONAL: it shows and can be priced, but left empty it is carried in the main line, never missing. ${NO_INVENTED_PRICES} The reply carries the line this call priced (line) and all of the condition's lines (lines), with a note naming any line still unpriced. Rides export_takeoff into the app; undo_last reverses the call.`,
+    inputSchema: {
+      condition: z.string().describe("Finish tag of an existing condition, e.g. 'CPT-1'"),
+      unit: z.enum(["SF", "SY", "LF", "EA"]).optional().describe("The MAIN line's pricing unit (default: what was measured — area, then length, then count)"),
+      line: z.enum(["SF", "SY", "LF", "EA"]).optional().describe("Which line material / labor price: omitted or the main line's unit = the main line; LF / EA / SF = the condition's other line of that kind (stored in pricing.by_unit)"),
+      material: z.number().min(0).nullable().optional().describe("Material $ per unit, on the order quantity; null clears"),
+      labor: z.number().min(0).nullable().optional().describe("Labor $ per unit, on the measured quantity; null clears"),
+      materials: z.array(z.object({
+        name: z.string().describe("A supporting-material row's name on this condition (case-insensitive)"),
+        price: z.number().min(0).nullable().describe("$ per the row's own unit; null clears"),
+      })).optional().describe("Prices for the condition's supporting-material rows"),
+    },
+    outputSchema: setPricingOutput,
+  }, run("set_pricing", (a) => session.setPricing(a.condition, { unit: a.unit, line: a.line, material: a.material, labor: a.labor, materials: a.materials })));
+
+  server.registerTool("set_estimate_settings", {
+    description: `The project's markups, proposal text and client — the canvas's estimate_settings, bid_proposal and client_info. Markups: tax_pct (sales tax on material), overhead_pct (on material + labor + tax), profit_pct with profit_mode markup (× (1 + p)) or margin (÷ (1 − p); 33.33% margin is ×1.5). proposal: itemized (a sell price on each scope line, the base bid allocated to the cent) or lump sum, scope_note, inclusions / exclusions (one per line), terms, valid_days. client: who the proposal is for. Only what you pass changes; an empty client string clears that field. Until markups are set the estimate prices at 0% — say so rather than assume a number. ${NO_INVENTED_PRICES} Rides export_takeoff; undo_last reverses the call.`,
+    inputSchema: {
+      tax_pct: z.number().min(0).optional(),
+      overhead_pct: z.number().min(0).optional(),
+      profit_pct: z.number().min(0).optional(),
+      profit_mode: z.enum(["markup", "margin"]).optional(),
+      proposal: z.object({
+        itemized: z.boolean().optional(),
+        scope_note: z.string().optional(),
+        inclusions: z.string().optional().describe("One per line"),
+        exclusions: z.string().optional().describe("One per line"),
+        terms: z.string().optional(),
+        valid_days: z.number().int().min(1).max(365).optional(),
+      }).optional(),
+      client: z.object({ name: z.string().optional(), address: z.string().optional(), reference: z.string().optional() }).optional(),
+    },
+    outputSchema: setEstimateSettingsOutput,
+  }, run("set_estimate_settings", (a) => session.setEstimateSettings(a)));
+
+  server.registerTool("estimate_summary", {
+    description: `The priced estimate — the canvas Estimate panel as data: one line per quantity kind each measured condition carries — its area, LF and EA are separate lines (unit, order and measured quantities, rates, material / labor / supply cost, main marks each condition's first line; status priced | partial | unpriced with what is missing, or optional — a bordered linear run's derived line nobody priced, carried in its main line and never missing; set_pricing prices any line: the main one by default, the others with line "LF" / "EA" / "SF"), then material, labor, sales tax, cost, overhead, profit and the base bid. complete is false while anything is unentered: the total then counts the missing pieces at $0 and is "priced so far", and unpriced lists every hole — report it to the estimator, never fill it. Read-only.`,
+    inputSchema: {},
+    outputSchema: estimateSummaryOutput,
+  }, run("estimate_summary", () => session.estimateSummary()));
+
+  server.registerTool("export_estimate", {
+    description: `Write the priced estimate as an Excel workbook — the canvas Estimate panel's Excel button: an Estimate tab (every line, then material, labor, tax, overhead, profit, base bid), a Materials tab (each supply's packages, price, cost) and, when anything is unentered, an Unpriced tab. Values only; an unentered rate is an empty cell, never 0. Every tab ends with "Prepared with OpenTakeoff". Default path: next to the loaded plan as "<project or plan> - estimate.xlsx". The reply repeats complete and unpriced — tell the user when the total is only priced so far.`,
+    inputSchema: {
+      path: z.string().optional().describe('Where to write the .xlsx (default: "<plan dir>/<project or plan> - estimate.xlsx")'),
+      project_name: z.string().optional().describe("Project name on each tab (default: the plan file's name)"),
+      company_name: z.string().optional().describe("Prepared-by line"),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: exportEstimateOutput,
+  }, run("export_estimate", (a) => exportEstimateFile(session, a)));
+
+  server.registerTool("export_proposal", {
+    description: `Write the bid proposal PDF — the canvas Proposal dialog's download: letterhead from company, prepared-for (set_estimate_settings client), the scope (each condition, its spec description, measured quantity), the base bid (lump sum, or itemized when the project's proposal says so), inclusions / exclusions / terms and signature blocks. Every page carries a light diagonal "OpenTakeoff" and the line "Prepared with OpenTakeoff · opentakeoff.kentucky-ai.com". Pass company exactly as the estimator gave it — this server has no Company setup of its own. It never refuses an incomplete estimate; the reply's complete and unpriced say what the base bid is missing, and the user must hear it before sending. Default path: next to the loaded plan as "<project or plan> - proposal.pdf".`,
+    inputSchema: {
+      path: z.string().optional().describe('Where to write the PDF (default: "<plan dir>/<project or plan> - proposal.pdf")'),
+      project_name: z.string().optional().describe("Project name on the proposal (default: the plan file's name)"),
+      company: z.object({
+        name: z.string().optional(), address: z.string().optional(), phone: z.string().optional(),
+        email: z.string().optional(), license: z.string().optional(),
+      }).optional().describe("The contractor's letterhead, from the estimator"),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: exportProposalOutput,
+  }, run("export_proposal", (a) => exportProposalFile(session, a)));
+
   server.registerTool("import_takeoff", {
     description: `The way BACK IN (#151): load an "opentakeoff.takeoff_canvas.v1" file — a prior export_takeoff, or the app's own save — into this session, through the SAME tested merge rules as the app's Sheet-menu import: finish-tag identity joins imported conditions onto this session's own (their knobs win), new ids append, duplicate ids skip (re-import is idempotent), and THIS session's calibration wins per sheet. An uncalibrated empty session adopts the file wholesale. New dimensional shapes refuse atomically if their source scale differs from the session calibration or is missing; align scales and re-export, or use a fresh session. Counts and duplicate IDs are exempt. Legacy agent traces without review flags arrive reviewed:false. Resume yesterday's work, extend a takeoff a human already reviewed (their ink stays ink — reviewed shapes arrive untouchable by agent verbs), or audit someone else's export with list_shapes/takeoff_summary. Requires a loaded plan; shapes referencing OTHER files ride along and count in totals but can't be viewed against this document — the reply's unknown_files names them. Approval marks ride the file too — transport, not minting: an estimator seal arriving by import stays estimator ink, listable but untouchable here. undo_last removes the imported SHAPES as one step; adopted conditions, scales, annotations, and approval marks stay.`,
     inputSchema: {
@@ -386,7 +504,7 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
   }, run("apply_rules", (a) => session.applyRules(a)));
 
   server.registerTool("export_marked_pdf", {
-    description: `The MARKED-UP PLANSET — the deliverable of every takeoff. Writes a distribution-ready PDF to disk: a legend cover (per-condition totals, swatches, a by-sheet breakdown) followed by every sheet that carries takeoff shapes or annotations, vector-copied from the source plan with the work burned in as drawn — condition colors and hatches, a quantity chip on every shape, annotation clouds/callouts/highlights, and approval marks (the estimator's APPROVED rings, the agent's AGENT diamonds — the cover tallies the split). Built by the same module as the canvas's MARKED SET button, so agent output and app output are one implementation. A construction takeoff is no good without markup: finish EVERY takeoff by writing this file and giving the user its path (export_report carries the numbers for pricing; this carries the evidence). When the shapes were machine-traced and unreviewed, the document says so on its last page — the review path is importing the export_takeoff payload into the app, where agent shapes arrive as pencil proposals. Default path: next to the loaded plan as "<plan> - marked set.pdf". Needs no native canvas — pure vector copy, so it works even where view_sheet cannot render. The one source it refuses: an ENCRYPTED plan PDF (owner password, empty user password — it opens everywhere, but its pages cannot be vector-copied and there is no canvas here to render them); the refusal names the sheet — export the marked set from the app, or supply an unencrypted PDF.`,
+    description: `The MARKED-UP PLANSET — the deliverable of every takeoff. Writes a distribution-ready PDF to disk: a legend cover (per-condition totals, swatches, a by-sheet breakdown) followed by every sheet that carries takeoff shapes or annotations, vector-copied from the source plan with the work burned in as drawn — condition colors and hatches, a quantity chip on every shape, annotation clouds/callouts/highlights, and approval marks (the estimator's APPROVED rings, the agent's AGENT diamonds — the cover tallies the split). Built by the same module as the canvas's MARKED SET button, so agent output and app output are one implementation. Every page carries a light diagonal \"OpenTakeoff\" and the line \"Prepared with OpenTakeoff · opentakeoff.kentucky-ai.com\". A construction takeoff is no good without markup: finish EVERY takeoff by writing this file and giving the user its path (export_report carries the numbers for pricing; this carries the evidence). When the shapes were machine-traced and unreviewed, the document says so on its last page — the review path is importing the export_takeoff payload into the app, where agent shapes arrive as pencil proposals. Default path: next to the loaded plan as "<plan> - marked set.pdf". Needs no native canvas — pure vector copy, so it works even where view_sheet cannot render. The one source it refuses: an ENCRYPTED plan PDF (owner password, empty user password — it opens everywhere, but its pages cannot be vector-copied and there is no canvas here to render them); the refusal names the sheet — export the marked set from the app, or supply an unencrypted PDF.`,
     inputSchema: {
       path: z.string().optional().describe('Where to write the PDF (default: "<plan dir>/<plan> - marked set.pdf")'),
       project_name: z.string().optional().describe("Cover-page project name (default: the plan file's name)"),
@@ -508,7 +626,7 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
       remove: z.array(z.string()).optional().describe("Existing row ids to remove"),
       patch: z.array(z.object({
         id: z.string(),
-        fields: z.record(z.union([z.string(), z.number(), z.boolean()])).describe("Field:value pairs — name/per/basis/unit/round/note only"),
+        fields: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).describe("Field:value pairs — name/per/basis/unit/round/note only"),
       })).optional().describe("Field changes on existing rows"),
     },
     outputSchema: editMaterialsOutput,
@@ -626,6 +744,49 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
     outputSchema: findTextOutput,
   }, run("find_text", (a) => session.findText(a.sheet, a.q, { region: a.region, limit: a.limit })));
 
+  server.registerTool("rotate_page", {
+    description: `Rotate a sheet's page in the PDF (90, 180, or 270 degrees clockwise) before measuring. Transforms all existing takeoff shapes, markups, and calibrations on that sheet to remain locked to the drawing. Output file path is optional (default: "<file>_rotated.pdf"); pass overwrite:true to allow replacing an existing file. ${COORDS}`,
+    inputSchema: {
+      sheet: z.string().describe('Sheet key ("plan.pdf", "plan.pdf#2") or sheet number ("A-101")'),
+      angle: z.union([z.literal(90), z.literal(180), z.literal(270)]).describe("Clockwise rotation angle in degrees: 90, 180, or 270"),
+      output_path: z.string().optional().describe('Destination file path (default: "<file>_rotated.pdf")'),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: rotatePageOutput,
+  }, run("rotate_page", ({ sheet, angle, output_path, overwrite }) => session.rotatePage(sheet, angle, output_path, overwrite)));
+
+  server.registerTool("reorder_pages", {
+    description: `Reorder pages in a loaded PDF document. Remaps all takeoff sheet keys so measurements and annotations follow their pages. Output file path is optional (default: "<file>_reordered.pdf"); pass overwrite:true to allow replacing an existing file. ${COORDS}`,
+    inputSchema: {
+      file: z.string().describe('The loaded PDF file name (e.g. "plan.pdf")'),
+      order: z.array(z.number().int().min(1)).describe("1-based new page order, e.g. [2, 1, 3] to swap pages 1 and 2"),
+      output_path: z.string().optional().describe('Destination file path (default: "<file>_reordered.pdf")'),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: reorderPagesOutput,
+  }, run("reorder_pages", ({ file, order, output_path, overwrite }) => session.reorderPages(file, order, output_path, overwrite)));
+
+  server.registerTool("extract_pages", {
+    description: `Extract a subset of pages from a loaded PDF into a new PDF file on disk. Carries all takeoff shapes and annotations on those pages into the new document (mapped to pages 1..N). ${COORDS}`,
+    inputSchema: {
+      file: z.string().describe("The loaded PDF file name"),
+      pages: z.array(z.number().int().min(1)).describe("1-based page numbers to extract, e.g. [2, 3]"),
+      output_path: z.string().optional().describe('Destination file path (default: "<file>_extracted.pdf")'),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: extractPagesOutput,
+  }, run("extract_pages", ({ file, pages, output_path, overwrite }) => session.extractPages(file, pages, output_path, overwrite)));
+
+  server.registerTool("merge_documents", {
+    description: `Merge multiple PDF files into one combined PDF document on disk. Combines the pages and remaps takeoff keys from all source documents. ${COORDS}`,
+    inputSchema: {
+      files: z.array(z.string()).describe("List of PDF files to merge in order (can be loaded file names or file paths on disk)"),
+      output_path: z.string().describe("Destination path for the merged PDF"),
+      overwrite: z.boolean().optional().describe(OVERWRITE_DESC),
+    },
+    outputSchema: mergeDocumentsOutput,
+  }, run("merge_documents", ({ files, output_path, overwrite }) => session.mergeDocuments(files, output_path, overwrite)));
+
   server.registerTool("view_sheet", {
     description: `SEE the sheet — render the page (or a crop of it) to a PNG image. This is your eyes on the plan, so CROP, DON'T SQUINT: the render downsamples to the px budget (≤2000 long side), which on an E-size sheet is ~4 sheet pixels per returned pixel — a full-sheet render finds WHERE things are, and only a tight region crop can tell you what the linework and labels actually say. Never audit a trace or read a dimension off a full-sheet render. region is in image px — the same space as every other tool — so a feature at pixel (ix, iy) of the returned image sits at x = region_x0 + ix × (region_x1 − region_x0) / img_w (same for y), and those coordinates go straight into ${oneClick ? "one_click, " : ""}measure_polygon, or read_sheet_text. overlay:true burns the session's committed shapes into the render (human-affirmed ink solid red, unreviewed machine shapes dashed blue) — render again after committing to verify your geometry landed where you intended, and sanity-check what you see: a fixture-sized ring where a room should be means the seed landed inside a stall or casework; an outsized ring means the flood escaped through an opening. To MEASURE rather than guess, pass grid: a calibrated measuring grid is burned in — thin lines every 1 ft, heavy blue every 5 ft, foot labels along the crop edges, feet counted from the crop's top-left corner. Count grid cells between walls exactly like an estimator scaling a plan; never derive a dimension by eye when the grid can give it to you. grid "auto" uses the sheet's set scale; before set_scale, pass the drawing scale read off the title block as inches-per-foot — "1/4" for a 1/4" = 1'-0" plan, "3/16", "0.25". marks (#297) burns DISCLOSURE layers into the render, so what a reply names, the picture shows: pass the coordinate lists a tool disclosed — question: withheld placements (orange ?-circles), struck: rejections a counter-example or luminance gate refused (magenta struck ×), ring: reference points like the sweep's own seed (violet double ring). The colors sit deliberately off the common CAD pens so they cannot vanish into color-plotted work. An overlay audit without marks shows only committed ink — the validation trap where 37 disclosed near-misses read as "it missed them". Rendering needs the optional native canvas (@napi-rs/canvas); where it isn't installed this tool errors cleanly and every other tool still works. ${COORDS}`,
     inputSchema: {
@@ -656,6 +817,42 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
     traceToolCall("view_sheet", a, startedAt, reply);
     return reply;
   });
+
+  server.registerTool("stitch_sheets", {
+    description: `Stitch 2–4 plan sheets together into a composite working surface across match-lines (#161) — the browser canvas's Stitched Sheets feature. Shapes traced on the returned stitch reference bind to the composite key ("stitch:<uid>") and measure continuously across seam boundaries once aligned. By default sheets create in auto-butt layout (aligned: false). Use align_stitch with two matching reference points to align sheets across their match line and run the automated linework seam check; measuring across a seam on an unaligned or withheld stitch is refused. Member sheets must have calibrated, matching scales. ${COORDS}`,
+    inputSchema: {
+      sheets: z.array(z.string()).min(2).max(4).describe("2–4 sheet keys or sheet numbers to stitch together"),
+      name: z.string().optional().describe('Optional human-readable label for the composite sheet (defaults to "Stitched sheets")'),
+      align: z.object({
+        anchor: pointSchema.describe("First alignment point in image px"),
+        moving: pointSchema.describe("Second alignment point in image px — sheet under moving translates to anchor"),
+      }).optional().describe("Two-point match line alignment"),
+      members: z.array(z.object({
+        key: z.string(),
+        dx: z.number(),
+        dy: z.number(),
+      })).optional().describe("Explicit member sheet placements in image px (alternative to auto-butt or align)"),
+    },
+    outputSchema: stitchSheetsOutput,
+  }, run("stitch_sheets", (a) => session.stitchSheets(a)));
+
+  server.registerTool("align_stitch", {
+    description: `Align a composite stitched sheet surface across its match line using two matching reference points (image px) — one on each member sheet — or omit both anchor and moving to verify existing persisted member placements in place. Performs a seam check across the match line: analyzes vector wall linework crossing the seam, reports true maximum, 95th percentile, and median linework displacement (px and inches at scale), leftover rotation, and withholding status. Refuses if true maximum linework mismatch exceeds tolerance (default 0.50 in / 1/2", calibrated from real split plans). ${COORDS}`,
+    inputSchema: {
+      stitch: z.string().describe("The stitch key (starts with stitch:) to align or verify"),
+      anchor: pointSchema.optional().describe("First alignment point in image px (omit with moving to verify existing placement)"),
+      moving: pointSchema.optional().describe("Second alignment point in image px — sheet under moving translates to anchor (omit with anchor to verify existing placement)"),
+      tolerance_in: z.number().positive().optional().describe("Linework displacement tolerance in inches (default: 0.50)"),
+      rot_tolerance_deg: z.number().positive().optional().describe("Leftover rotation tolerance in degrees (default: 0.25)"),
+    },
+    outputSchema: alignStitchOutput,
+  }, run("align_stitch", (a) => session.alignStitch(a)));
+
+  server.registerTool("list_stitches", {
+    description: "List all existing composite stitched sheet surfaces in the current session, including dimensions, member sheet placements, inherited scale, and shape counts.",
+    inputSchema: {},
+    outputSchema: listStitchesOutput,
+  }, run("list_stitches", () => session.listStitches()));
 
   // ── annotations (#114) — the agent half of markup.condition_id (#112) ──────
   // A human could attach a note to a scope; an agent could not even SEE one
@@ -774,6 +971,10 @@ export function registerTools(realServer: McpServer, session: Session, opts: { o
     },
     outputSchema: deleteRfiOutput,
   }, run("delete_rfi", ({ rfi_id }) => session.deleteRfi(rfi_id)));
+
+  // ── trade suites (suites.ts): open_suite is a setup tool; the trade tools
+  // register on the real server, disabled until a suite is opened ──
+  registerSuites(server, realServer, session, { suites: opts.suites });
 
   return registered;
 }

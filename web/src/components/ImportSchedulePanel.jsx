@@ -15,7 +15,8 @@
 // lib/scheduleEdit (tested).
 // Contract (skipped is optional with a safe default):
 //   <ImportSchedulePanel rows existing={Set<finish_tag>} palette startIndex
-//                        skipped?={string[]} onCreate(rows[]) onClose />
+//                        skipped?={string[]} planSet? subscribeIndex? labelOf?
+//                        onCreate(rows[]) onClose />
 // skipped = codes the reader saw but didn't read (four- or five-letter codes
 // with no number, one entry per line); a notice above the rows names them.
 // rows can be empty when skipped codes were all the box held: the dialog then
@@ -33,10 +34,17 @@
 // "from description" so the estimator reviews it before Create. A code the
 // reader repaired from an OCR misread (read_as: PT-O1 imported as PT-01, #482)
 // is flagged "read as PT-O1" until the code is edited to another one.
+//
+// planSet (optional; lib/codeUse CodeUseSet) lets each row say whether its
+// code (as edited) is printed on the plans: "on N sheets", "not found in
+// checked text", or "N sheets not checked" while the set's index fills (#498).
+// It is information only: it never unticks a row. subscribeIndex re-reads it
+// as the index fills; labelOf names sheets in the tooltip.
 import React, { useId, useMemo, useState } from "react";
 import { Icon } from "../brand/icons.jsx";
-import { closeOnEscape, evaluateTags, groupState, groupToggle, isCreatable, previewColors, readAsShown, setPicked as pickRows, skippedBanner } from "../lib/scheduleEdit";
+import { closeOnEscape, codeCheckShown, evaluateTags, groupClickable, groupState, groupToggle, isCreatable, previewColors, readAsShown, setPicked as pickRows, skippedBanner } from "../lib/scheduleEdit";
 import { notUsedKind, notUsedNote } from "../lib/notUsed";
+import { codeUse, codeUseLine } from "../lib/codeUse";
 import { S } from "../lib/ui.js";
 
 // category → display group, in the order an estimator reads a floor set.
@@ -53,7 +61,8 @@ const GROUPS = [
   { key: "other", label: "Other" },
 ];
 
-export default function ImportSchedulePanel({ rows = [], existing = new Set(), palette = [], startIndex = 0, skipped = [], onCreate, onClose }) {
+/** @param {{ rows?: import('../lib/scheduleRows').ScheduleRow[], existing?: Set<string>, palette?: string[], startIndex?: number, skipped?: string[], planSet?: import('../lib/codeUse').CodeUseSet, subscribeIndex?: (fn: () => void) => () => void, labelOf?: (key: string) => string, onCreate: (rows: import('../lib/scheduleRows').ScheduleRow[]) => void, onClose: () => void }} props */
+export default function ImportSchedulePanel({ rows = [], existing = new Set(), palette = [], startIndex = 0, skipped = [], planSet, subscribeIndex, labelOf, onCreate, onClose }) {
   const uid = useId(); // prefixes each row's flag id so aria-describedby is unique on the page
   // Give every row a STABLE key up front. Checkbox + color state is keyed on it,
   // not on the tag, so editing a tag never drops a row's selection.
@@ -82,12 +91,25 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
   );
   const stateOf = (key) => tagState.get(key);
   const canPick = (key) => isCreatable(tagState.get(key));
+  const rowByKey = new Map(keyed.map(({ key, row }) => [key, row]));
+  const canBulkPick = (key) => canPick(key) && !codeCheckShown(rowByKey.get(key), stateOf(key).tag);
 
   const [picked, setPicked] = useState(() => {
     const init = evaluateTags(keyed.map(({ key, row }) => ({ key, tag: row.finish_tag })), existing, rank);
-    return new Set(keyed.filter(({ key, row }) => row.suggested && isCreatable(init.get(key))).map(({ key }) => key));
+    return new Set(keyed.filter(({ key, row }) => row.suggested && !codeCheckShown(row, row.finish_tag) && isCreatable(init.get(key))).map(({ key }) => key));
   });
   const [editing, setEditing] = useState(null); // { key, orig } | null
+
+  // "On the plans?" per row (#498), re-read whenever the set's index changes
+  // (the canvas and gallery fill it lazily) and on every tag edit.
+  const [indexTick, setIndexTick] = useState(0);
+  React.useEffect(() => subscribeIndex?.(() => setIndexTick((n) => n + 1)), [subscribeIndex]);
+  const useByKey = useMemo(() => {
+    if (!planSet) return new Map();
+    return new Map(keyed.map(({ key }) => { const tag = tagState.get(key)?.tag; return [key, tag ? codeUse(tag, planSet) : null]; }));
+    // indexTick: the index map is mutated in place, so its change is the tick
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyed, tagState, planSet, indexTick]);
 
   // Preview the line color each new condition will actually get: the parent
   // assigns palette[startIndex + n] over the rows it CREATES (picked and
@@ -106,12 +128,12 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
 
   const toggle = (key) => setPicked((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   // A group's checkbox: all picked → clear the group; some or none → pick
-  // every pickable row in it, NOT USED rows included.
-  const toggleGroup = (grp) => setPicked((s) => groupToggle(s, grp.items.map(({ key }) => key), canPick));
+  // every bulk-pickable row in it, NOT USED included, code disagreements out.
+  const toggleGroup = (grp) => setPicked((s) => groupToggle(s, grp.items.map(({ key }) => key), canPick, canBulkPick));
   // Select All / Deselect All: the same set math over every row. Locked rows
   // (in use / duplicate / needs a code) are never picked.
   const allKeys = keyed.map(({ key }) => key);
-  const pickAll = (on) => setPicked((s) => pickRows(s, allKeys, canPick, on));
+  const pickAll = (on) => setPicked((s) => pickRows(s, allKeys, canBulkPick, on));
 
   // editing lifecycle
   const startEdit = (key, row) => setEditing({ key, orig: tagOf(key, row) });
@@ -132,6 +154,10 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
   const titleId = `${uid}-title`;
   const bannerId = `${uid}-skipped`;
   const hasSkipped = skipped.length > 0;
+  const checkId = `${uid}-code-checks`;
+  const hasCodeChecks = keyed.some(({ key, row }) => codeCheckShown(row, stateOf(key).tag));
+  const legacyBannerId = `${uid}-legacy`;
+  const hasLegacy = [...tagState.values()].some((s) => s.status === "legacy");
   const empty = rows.length === 0;
 
   // Rows to create: only picked + creatable, in row order (so the parent's
@@ -145,7 +171,7 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 40 }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={hasSkipped ? bannerId : undefined}
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={[hasSkipped && bannerId, hasCodeChecks && checkId, hasLegacy && legacyBannerId].filter(Boolean).join(" ") || undefined}
         style={{ width: "min(560px, calc(100vw - 32px))", maxHeight: "min(82vh, 720px)", display: "flex", flexDirection: "column", background: "var(--paper-bright)", border: "1px solid var(--cobalt)", boxShadow: "var(--shadow-pop)", fontSize: 12.5 }}>
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--ink-faint)", background: "var(--cobalt)", color: "var(--accent-contrast)" }}>
@@ -159,11 +185,24 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
           </div>
         )}
 
+        {hasCodeChecks && (
+          <div role="note" id={checkId} style={{ fontSize: "var(--fs-s)", color: "var(--ink)", borderLeft: "3px solid var(--c-warning)", paddingLeft: 8, margin: "8px 14px" }}>
+            Verify scanned codes against the schedule, then edit the code or select each row yourself. Two reads can agree on the same wrong code. Group checkboxes and Select all leave unverified rows unchecked. A row labeled “set code” needs you to enter its code first.
+          </div>
+        )}
+
+        {hasLegacy && (
+          <div role="note" id={legacyBannerId} style={{ fontSize: "var(--fs-s)", color: "var(--ink)", borderLeft: "3px solid var(--c-warning)", paddingLeft: 8, margin: "8px 14px" }}>
+            Some codes may already exist without parentheses. Those rows are held. Check the existing condition; if it is the same finish, rename it before importing again. If they are different finishes, add the new condition manually.
+          </div>
+        )}
+
         {/* rows */}
         <div style={{ overflow: "auto", padding: "4px 0" }}>
           {grouped.map((grp) => {
             const keys = grp.items.map(({ key }) => key);
-            const anyPickable = keys.some(canPick);
+            // the box shows what is ticked; scanned rows tick one at a time (#500)
+            const anyPickable = groupClickable(picked, keys, canPick, canBulkPick);
             const state = groupState(picked, keys, canPick);
             return (
               <div key={grp.key}>
@@ -178,7 +217,7 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
                   const ok = isCreatable(st);
                   const isEditing = editing?.key === key;
                   const on = picked.has(key) && ok;
-                  const flag = flagFor[st?.status];
+                  const flag = st?.status === "legacy" ? `check existing ${st.legacyTag}` : flagFor[st?.status];
                   // The guessed-category flag, the read-as flag and the NOT USED
                   // label sit OUTSIDE the <label> (so they aren't folded into the
                   // checkbox's name) and describe the checkbox. The in-use /
@@ -187,11 +226,15 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
                   const readAsId = readAsShown(r, tagOf(key, r)) ? `${uid}-${key}-readas` : undefined;
                   const notUsedId = r.unticked_reason ? `${uid}-${key}-notused` : undefined;
                   const note = notUsedId ? notUsedNote(notUsedKind(r.not_used_text || "") || "not-used", { pickable: ok, picked: on }) : "";
-                  const describedBy = [guessId, readAsId, notUsedId].filter(Boolean).join(" ") || undefined;
+                  const codeCheckId = codeCheckShown(r, st?.tag || "") ? `${uid}-${key}-check` : undefined;
+                  const u = useByKey.get(key);
+                  const useLine = u && codeUseLine(u, labelOf);
+                  const useId_ = useLine ? `${uid}-${key}-use` : undefined;
+                  const describedBy = [guessId, readAsId, notUsedId, codeCheckId, useId_].filter(Boolean).join(" ") || undefined;
                   // Descriptors sit right of the label and drop to their own line
                   // when the row is narrow. A lone one is the label's sibling; more
                   // than one are grouped so they wrap together.
-                  const several = [guessId, readAsId, notUsedId].filter(Boolean).length > 1;
+                  const several = [guessId, readAsId, notUsedId, useId_].filter(Boolean).length > 1;
                   const right = several ? {} : { marginLeft: "auto" };
                   const guess = guessId && (
                     <span id={guessId} title="Category guessed from the row's own words — no printed heading names one" style={{ ...lbl, color: "var(--c-warning)", flex: "0 0 auto", cursor: "help", ...right }}>from description</span>
@@ -209,6 +252,14 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
                   const notUsed = notUsedId && (
                     <span id={notUsedId} title={note.trimStart()} style={{ ...lbl, textTransform: "none", color: "var(--ink)", borderLeft: "2px solid var(--c-warning)", paddingLeft: 4, position: "relative", flex: "0 0 auto", cursor: "help", ...right }}>
                       {r.not_used_text || "NOT USED"}<span style={S.visuallyHidden}>{note}</span>
+                    </span>
+                  );
+                  // Quiet unless the code wasn't found: a found code is a muted
+                  // count, an unchecked one muted too; only "not found in
+                  // checked text" takes the warning color.
+                  const onPlans = useId_ && (
+                    <span id={useId_} title={useLine.title} style={{ ...lbl, textTransform: "none", color: u.state === "not-found" ? "var(--c-warning)" : "var(--ink-muted)", flex: "0 0 auto", cursor: "help", ...right }}>
+                      {useLine.text}
                     </span>
                   );
                   return (
@@ -245,9 +296,14 @@ export default function ImportSchedulePanel({ rows = [], existing = new Set(), p
                             <span style={{ color: "var(--ink-muted)", fontSize: 11 }}>  ·  {[r.manufacturer, r.size].filter(Boolean).join(" · ")}</span>
                           )}
                         </span>
-                        {flag && <span title={st?.status === "duplicate" ? "Click the code to rename it." : undefined} style={{ ...lbl, opacity: 0.8 }}>{flag}</span>}
+                        {flag && <span title={st?.status === "legacy" ? `An earlier import may have removed the parentheses. Check the existing ${st.legacyTag} condition; if it is this finish, rename that condition to ${st.tag} before importing again.` : st?.status === "duplicate" ? "Click the code to rename it." : undefined} style={{ ...lbl, opacity: 0.8 }}>{flag}</span>}
                       </label>
-                      {several ? <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>{guess}{readAs}{notUsed}</div> : guess || readAs || notUsed}
+                      {codeCheckId && (
+                        <span id={codeCheckId} style={{ flexBasis: "100%", fontSize: "var(--fs-s)", color: "var(--c-warning)" }}>
+                          {r.code_checks?.length ? `Check code: ${r.code_checks.map(({ first, second }) => second ? `${first} / ${second}` : `${first} / second read did not confirm`).join("; ")}` : "Verify scanned code"}
+                        </span>
+                      )}
+                      {several ? <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>{guess}{readAs}{notUsed}{onPlans}</div> : guess || readAs || notUsed || onPlans}
                     </div>
                   );
                 })}

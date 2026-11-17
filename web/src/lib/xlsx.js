@@ -14,10 +14,9 @@
 // the on-screen table: waste applied only to order quantities, never measured.
 
 import { GETTERS, colGetter, applyUnits, METRIC_CSV_LABELS } from "./reportColumns.js";
-import { grandTotals, materialsSummary, roundSheetRow, hasMultipliers, BY_SHEET_BASE_NOTE } from "./totals.js";
+import { grandTotals, materialsSummary, roundSheetRow, hasMultipliers, BY_SHEET_BASE_NOTE, coverageLabel } from "./totals.js";
 import { round2 } from "./num.js";
 import { M_PER_FT, M2_PER_SF } from "./units";
-import { coverageToDisplay, coverageBasisLabel } from "./coverageUnits.js";
 
 // ---------------------------------------------------------------------------
 // XML plumbing
@@ -63,7 +62,11 @@ export function sanitizeSheetName(name, used = new Set()) {
 //   number (finite)      → <c r=… ><v>…</v></c>
 //   null / undefined / "" → cell skipped entirely
 //   anything else         → inline string, XML-escaped
-export function sheetXml(rows) {
+// `footer` (optional) is the printed page footer, centred on every page Excel
+// prints from the tab — the estimate's OpenTakeoff line rides here so a
+// printed or PDF-saved estimate carries it too. "&" is Excel's header/footer
+// code character, so a literal one is doubled.
+export function sheetXml(rows, { footer = "" } = {}) {
   const out = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'];
   rows.forEach((cells, ri) => {
@@ -82,7 +85,9 @@ export function sheetXml(rows) {
     });
     out.push("</row>");
   });
-  out.push("</sheetData></worksheet>");
+  out.push("</sheetData>");
+  if (footer) out.push(`<headerFooter><oddFooter>${escXml(`&C${String(footer).replace(/&/g, "&&")}`)}</oddFooter></headerFooter>`);
+  out.push("</worksheet>");
   return out.join("");
 }
 
@@ -103,7 +108,7 @@ const STYLES_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
 
 /**
  * Zip sheet definitions into an .xlsx byte array.
- * @param {Array<{name: string, rows: any[][]}>} sheets one entry per tab, in order
+ * @param {Array<{name: string, rows: any[][], footer?: string}>} sheets one entry per tab, in order
  * @returns {Promise<Uint8Array>} download with MIME
  *   application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
  */
@@ -144,7 +149,7 @@ export async function buildXlsx(sheets) {
     "xl/_rels/workbook.xml.rels": strToU8(wbRels),
     "xl/styles.xml": strToU8(STYLES_XML),
   };
-  sheets.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s.rows)); });
+  sheets.forEach((s, i) => { files[`xl/worksheets/sheet${i + 1}.xml`] = strToU8(sheetXml(s.rows, { footer: s.footer })); });
   return zipSync(files);
 }
 
@@ -170,9 +175,9 @@ export async function buildXlsx(sheets) {
  *   [args.ctx] handed to the getters
  * @param {((sheetId: any) => string)|null} [args.sheetLabel]
  * @param {"imperial"|"metric"} [args.units] display units — "metric" converts
- *   the Conditions, By-sheet, and Materials tabs to m2/m (SY retires) exactly
- *   like the CSV; the Shapes tab stays raw internal feet (the shapes CSV/JSON
- *   contract) and its note line says so. "imperial" (default) is byte-identical.
+ *   the Conditions, By-sheet, floor × room, Shapes, and Materials tabs to
+ *   metric display units (SY retires), exactly like the CSV. "imperial"
+ *   (default) is byte-identical.
  * @returns {Array<{name: string, rows: any[][]}>}
  */
 export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols = null, ctx = null, sheetLabel = null, units = "imperial", byFloorRoom = [] }) {
@@ -208,10 +213,9 @@ export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols =
   if (hasMultipliers(bySheet)) bySheetRows.push([], [BY_SHEET_BASE_NOTE]);
 
   // Materials — per condition, then the combined buy list (mirrors the CSV)
-  const coveragePer = (m) => round2(coverageToDisplay(m.per, m.basis || "area", units));
   const materials = [["Finish", "Material", "Qty", "Unit", "Coverage", "Note"]];
   for (const r of rows) for (const m of (r.materials || [])) {
-    materials.push([r.finish_tag, m.name, m.qty, m.unit, `1 ${m.unit || "unit"} / ${coveragePer(m)} ${coverageBasisLabel(m.basis, units).replace("m²", "m2")}`, m.note || ""]);
+    materials.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m, units), m.note || ""]);
   }
   const combined = materialsSummary(rows);
   if (combined.length) {
@@ -220,16 +224,15 @@ export function reportWorkbook({ rows = [], bySheet = [], shapeRows = [], cols =
   }
 
   // Shapes — measured only: no multiplier, no waste (shapesDetail semantics).
-  // Deliberately RAW internal feet even in metric display mode — this tab
-  // mirrors the standalone shapes CSV/JSON (machine-consumable raw values);
-  // the note line flags it so a metric reader isn't surprised.
+  // Metric display mode mirrors the standalone shapes CSV. The JSON keeps the
+  // machine-readable raw-foot field names.
   const shapesTab = [
-    ["Per-shape measured quantities — no multiplier or waste; deducts negative; LF on floor/deduct/surface rows is trace reference only (incl. openings) — linear rows alone sum to condition LF" + (M ? ". Raw internal SF/LF (display units: metric)" : "")],
-    ["Shape", "Sheet", "Sheet ID", "Finish", "Role", "Area SF", "LF", "EA", "Height ft", "Height override", "Rise ft", "Drop ft", "Origin"],
+    ["Per-shape measured quantities — no multiplier or waste; standalone deducts negative; reconciled cutouts stay as audit rows with zero additive area because the parent is already net; LF on floor/deduct/surface rows is trace reference only (incl. openings) — linear rows alone sum to condition LF"],
+    ["Shape", "Sheet", "Sheet ID", "Finish", "Role", `Area ${AU}`, LU, "EA", `Height ${M ? "m" : "ft"}`, "Height override", `Rise ${M ? "m" : "ft"}`, `Drop ${M ? "m" : "ft"}`, "Origin"],
   ];
   for (const r of shapeRows) {
     shapesTab.push([String(r.shape_id), String(r.sheet), String(r.sheet_id), r.finish, r.role,
-      r.area_sf, r.lf, r.ea, r.height_ft, r.height_override ? "yes" : "", r.rise_ft ?? 0, r.drop_ft ?? 0, r.origin]);
+      A(r.area_sf), L(r.lf), r.ea, L(r.height_ft), r.height_override ? "yes" : "", L(r.rise_ft ?? 0), L(r.drop_ft ?? 0), r.origin]);
   }
 
   // By floor × room — the cross-section the other tabs each flatten one axis

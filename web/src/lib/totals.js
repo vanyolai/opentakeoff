@@ -23,15 +23,63 @@ import { REPORT_SCHEMA } from "./takeoffConstants.ts";
 import { csvEsc as esc } from "./csv.js";
 import { GETTERS, CSV_PROFILE, colGetter, floorPerimeterLf, applyUnits, METRIC_CSV_LABELS } from "./reportColumns.js";
 import { M_PER_FT, M2_PER_SF } from "./units";
+import { coverageToDisplay, coverageFromDisplay } from "./coverageUnits.js";
 import { attrValue } from "./conditionColumns.js";
 import { shapeLabelValue } from "./shapeLabels.js";
 import { compareSheetKeys } from "./sheetKey"; // NOT ./sheets — that module imports pdfjs-dist
-import { coverageToDisplay, coverageBasisLabel } from "./coverageUnits.js";
 import { hasFields, qtyLabels, resolveNote } from "./noteFields.ts";
 
 // Re-export so existing consumers (markedset, snapshotDiff, ReportPanel, tests)
 // keep importing round2 from here; num.js is the single definition.
 export { round2 } from "./num.js";
+
+// A supporting-material row that counts: named. conditionTotals keeps exactly
+// these rows, in order — lib/estimate.js relies on the same predicate to line
+// each row's price up with its quantity.
+export const isMaterialLine = (m) => Boolean(m && m.name);
+
+// An assembly item's quantity rule (the supporting-material row, extended):
+//   rule "coverage" (the default, absent on every row written before rules
+//   existed) — 1 unit per `per` basis units: 1 gal per 150 SF, 1 tube per 40 LF;
+//   rule "each" — `per` units per 1 basis unit: 2 anchors per EA, 1 cover plate
+//   per piece, 1.1 SF of underlayment per SF.
+// `waste_pct` on the row is the ITEM's own allowance (cut tape, spilled
+// adhesive), applied before the round-up; absent = 0, so a row written before
+// assemblies existed orders exactly what it always did. It never touches the
+// condition's waste. itemRaw is the measured (pre-waste, unrounded) quantity:
+// what an item's labor rate prices (lib/estimate.js).
+export const MATERIAL_RULES = ["coverage", "each"];
+export const itemRule = (m) => (m?.rule === "each" ? "each" : "coverage");
+export const itemWastePct = (m) => Math.max(0, Number(m?.waste_pct) || 0);
+export function itemRaw(m, basisVal) {
+  const per = Math.max(0, Number(m?.per) || 0);
+  if (!(per > 0)) return 0;
+  return itemRule(m) === "each" ? basisVal * per : basisVal / per;
+}
+export const basisLabel = (b, units = "imperial") => {
+  if (b === "count") return "EA";
+  if (b === "linear") return units === "metric" ? "m" : "LF";
+  if (b === "seam_lf") return units === "metric" ? "seam m" : "seam LF";
+  return units === "metric" ? "m2" : "SF";
+};
+// "1 gal / 150 SF", "2 ea / 1 EA", plus "+ 5% waste" when the item carries one —
+// the Coverage cell of the CSV and Excel materials tabs. Metric mode changes
+// only the displayed rate/basis; stored coverage remains in native SF/LF/EA.
+export function coverageLabel(m, units = "imperial") {
+  const u = m.unit || "unit";
+  const eachRule = itemRule(m) === "each";
+  const raw = Number(m.per) || 0;
+  const shown = units === "metric"
+    ? round2(eachRule
+      ? coverageFromDisplay(raw, m.basis || "area", units)
+      : coverageToDisplay(raw, m.basis || "area", units))
+    : m.per;
+  const base = eachRule
+    ? `${shown} ${u} / 1 ${basisLabel(m.basis, units)}`
+    : `1 ${u} / ${shown} ${basisLabel(m.basis, units)}`;
+  const w = itemWastePct(m);
+  return w > 0 ? `${base} + ${w}% waste` : base;
+}
 
 // The role → quantity mapping from the header comment, shared by
 // conditionTotals and sheetTotals. Mutates acc ({ floor, wall, border, lf,
@@ -85,12 +133,19 @@ export function conditionTotals(conditions, shapes, ctx = null) {
     // to whole units (you buy whole buckets/bags). basis = this condition's measured
     // area (SF), linear (LF), count (EA), or figured seam length (LF — weld rod,
     // seam tape). Coverage comes off the product data sheet.
-    const materials = (c.materials || []).filter((m) => m && m.name).map((m) => {
+    // An assembly item's rule ("each") and its own waste % ride along only
+    // when set, so every row written before them reports byte-for-byte as before.
+    const materials = (c.materials || []).filter(isMaterialLine).map((m) => {
       const per = Math.max(0, Number(m.per) || 0);
       const basisVal = m.basis === "linear" ? lf : m.basis === "count" ? ea : m.basis === "seam_lf" ? seam : total;
-      let qty = per > 0 ? basisVal / per : 0;
+      const itemWaste = itemWastePct(m);
+      let qty = itemRaw(m, basisVal) * (1 + itemWaste / 100);
       qty = m.round === false ? round2(qty) : Math.ceil(qty - 1e-9);
-      return { name: m.name, unit: m.unit || "", per, basis: m.basis || "area", round: m.round !== false, note: m.note || "", basis_qty: round2(basisVal), qty };
+      return {
+        name: m.name, unit: m.unit || "", per, basis: m.basis || "area", round: m.round !== false, note: m.note || "", basis_qty: round2(basisVal), qty,
+        ...(itemRule(m) === "each" ? { rule: "each" } : {}),
+        ...(itemWaste > 0 ? { waste_pct: itemWaste } : {}),
+      };
     });
     return {
       id: c.id, finish_tag: c.finish_tag, color: c.color, fill: c.fill, hatch: c.hatch,
@@ -391,8 +446,8 @@ export function grandTotals(rows) {
  * @param {string} [brandName]
  * @param {"imperial"|"metric"} [units] display units — "metric" converts every
  *   dimensioned column/section to m²/m and RETIRES the SY column (upstream's
- *   metric contract), including supporting-material coverage rates. "imperial"
- *   (default) is byte-identical to the frozen export.
+ *   metric contract), including supporting-material coverage labels. Stored
+ *   coverage stays in native units. "imperial" (default) is byte-identical.
  * @returns {string}
  */
 export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel = null, cols = null, ctx = null, byLabel = null, brandName = "OpenTakeoff", units = "imperial") {
@@ -420,33 +475,10 @@ export function totalsToCsv(rows, projectName = "", bySheet = null, sheetLabel =
   };
   lines.push(columns.map((c) => esc(foot(c))).join(","));
 
-  // supporting materials — per condition, then a combined buy list.
-  // Coverage follows display units: SF/LF in imperial mode, m²/m in metric mode.
-  const coveragePer = (m) => {
-    if (m.basis === "count") return m.per;
-
-    return round2(
-      coverageToDisplay(
-        m.per,
-        m.basis || "area",
-        units
-      )
-    );
-  };
-
+  // supporting materials — per condition, then a combined buy list. Coverage
+  // labels follow display units while stored rates stay in native SF/LF/EA.
   const perCond = [];
-  for (const r of rows) {
-    for (const m of (r.materials || [])) {
-      perCond.push([
-        r.finish_tag,
-        m.name,
-        m.qty,
-        m.unit,
-        `1 ${m.unit || "unit"} / ${coveragePer(m)} ${coverageBasisLabel(m.basis, units).replace("m²", "m2")}`,
-        m.note || "",
-      ]);
-    }
-  }
+  for (const r of rows) for (const m of (r.materials || [])) perCond.push([r.finish_tag, m.name, m.qty, m.unit, coverageLabel(m, units), m.note || ""]);
   if (perCond.length) {
     lines.push("");
     lines.push(["Finish", "Material", "Qty", "Unit", "Coverage", "Note"].map(esc).join(","));

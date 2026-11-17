@@ -44,9 +44,9 @@ what's missing where rendering isn't available.
 engine is re-validated against a wider plan corpus: `tools/list` never names them, the
 initialize `instructions` say so and point at `measure_polygon`, and no other tool's
 description sends an agent to a verb that is not there. A default build registers
-**<!--tool-count-->53<!--/tool-count--> tools**. Everything else — sweeps, counts, `derive_base`, `derive_transitions`, the
+**<!--tool-count-->69<!--/tool-count--> tools**. Everything else — sweeps, counts, `derive_base`, `derive_transitions`, the
 exports — is unchanged. Set `OPENTAKEOFF_ONE_CLICK=1` in the server's environment to
-register both verbs (<!--tool-count-all-->55<!--/tool-count-all--> tools); the parity, conformance and e2e tests run that way, and
+register both verbs (<!--tool-count-all-->71<!--/tool-count-all--> tools); the parity, conformance and e2e tests run that way, and
 `test/gate.test.ts` pins both surfaces. The rows and examples below that use `one_click`
 describe the lifted build. Design note: [`docs/design/ONE_CLICK_GATE.md`](../docs/design/ONE_CLICK_GATE.md).
 
@@ -123,7 +123,7 @@ includes document text, shape vertices, or result payload content.
 
 ### Staged tool exposure (opt-in)
 
-By default every client gets all <!--tool-count-->53<!--/tool-count--> tool schemas on `tools/list`—the flat
+By default every client gets all <!--tool-count-->69<!--/tool-count--> tool schemas on `tools/list`—the flat
 contract every published client already expects. Fifty-two descriptions is real
 token weight for an agent session that may never touch half of them, so the
 server can instead stage the surface along the workflow it already teaches:
@@ -132,7 +132,7 @@ server can instead stage the surface along the workflow it already teaches:
 OPENTAKEOFF_MCP_STAGED_TOOLS=1 npx -y opentakeoff-mcp
 ```
 
-Staged, only the **setup** stage (load, scale, read the set—<!--tool-count-setup-->11<!--/tool-count-setup--> tools) starts
+Staged, only the **setup** stage (load, scale, read the set—<!--tool-count-setup-->22<!--/tool-count-setup--> tools) starts
 enabled, plus one opener: `open_tool_stage`. Calling it with `"measure"`,
 `"revise"`, or `"handoff"` enables that stage's tools and fires
 `tools/list_changed`, so any client that supports dynamic tool lists (Claude
@@ -183,6 +183,9 @@ The [generated tool index](../docs/MCP_TOOL_INDEX.md) lists stages and required 
 | `import_takeoff` | **The way back in**: load a `takeoff_canvas.v1` file (a prior `export_takeoff`, or the app's own save) through the SAME merge rules as the app's Sheet-menu import—finish-tag identity joins conditions (this session's knobs win), new ids append, duplicates skip (idempotent re-import), this session's calibration wins per sheet. Resume, extend, or audit. Correction rules (#88) ride the file too—`apply_rules` re-runs them. |
 | `apply_rules` | **Re-run the correction rules the takeoff arrived with** (#207)—the lessons an estimator TAUGHT the canvas (#88), for example, "every room like this loses the mechanical chase". Same pure `rules.ts` engine the canvas Preview runs; committed as the ONE batch its Apply makes (`reviewed: false`, one undo step, `origin {method rule_v1, actor rule}` with the rule/seed/room citation). The reply's per-rule disclosure—produced, skipped, ids—IS the preview an agent gets. Idempotent by construction: anything an existing deduct covers is dropped by the engine, so re-running after new rooms commit is the intended workflow. Rules arrive ONLY through `import_takeoff`; minting one is an estimator's correction and stays behind the canvas's human Preview→Apply gate. |
 | `export_dxf` | The takeoff as a **CAD drawing**—a DXF (R2000) that AutoCAD, BricsCAD, LibreCAD and Revit import as native geometry. One sheet per file, like a DWG: every committed shape becomes an `LWPOLYLINE` (floor rings closed, walls and linear runs open, counts a circle) on a layer named for its finish—`OT-<TAG>`, with `-DEDUCT` / `-HOLE` / `-WALL` / `-LINEAR` / `-COUNT` suffix layers and room labels on `OT-LABELS`. Real units in the sheet's frame (origin bottom-left, Y up; feet, or `units:"m"`), and a ring's CAD area equals its `export_report` area to rounding. Refuses without a scale; with several sheets carrying shapes, `sheet` picks the drawing. Names every shape left out and why. `path` required. |
+| `estimate_summary` | The **priced estimate** as data: one line per measured condition (unit, order and measured quantities, rates, costs, `status` priced / partial / unpriced with what is `missing`), then material, labor, sales tax, cost, overhead, profit and the base bid. `complete: false` means the total is *priced so far* and `unpriced` names every hole; report them, never fill them. Read-only. |
+| `export_estimate` | The priced estimate as an **Excel workbook** (the canvas Estimate panel's Excel): Estimate, Materials and, when anything is unentered, Unpriced tabs; values only, unentered rates as empty cells, *Prepared with OpenTakeoff* on every tab. Default path beside the plan. |
+| `export_proposal` | The **bid proposal PDF** (the canvas Proposal dialog): letterhead from `company` (pass what the estimator gave you), prepared-for, scope with measured quantities, base bid (lump sum or itemized to the cent), inclusions / exclusions / terms, signature blocks; the OpenTakeoff watermark on every page. Never refuses an incomplete estimate; `complete` and `unpriced` in the reply say what the base bid is missing. Default path beside the plan. |
 | `export_marked_pdf` | The **marked-up planset**—the deliverable. Writes a distribution-ready PDF: a legend cover (per-condition totals, swatches, by-sheet breakdown) plus every sheet that carries work, vector-copied from the source with shapes, hatches, per-shape quantity chips, and annotations burned in—built by the same module as the canvas's MARKED SET button. Machine-traced shapes are disclosed as pending human review on the document itself, and the cover states where the finish tags came from (`Finish assignment: N schedule-resolved · N agent-asserted · …`, plus any rooms the last assign run withheld). Default path: `<plan> - marked set.pdf` next to the plan (see **Writing to disk** below). Works without `@napi-rs/canvas`. Refuses an **encrypted** source PDF (owner password, empty user password) with the sheet named — its pages cannot be vector-copied and the server has no canvas to render them; export from the app, or supply an unencrypted PDF. |
 | `list_shapes` | The **mid-session inventory**: every committed shape's id, sheet, condition, role, quantities, room `label`, review state, and assignment verdict (`schedule` \| `asserted`—where its finish tag came from) in one compact read—the ids `edit_shape`/`delete_shape` assume you have, without pulling the whole `export_takeoff` payload. Filters by sheet/condition narrow; empty is a result, not an error. |
 | `undo_last` | Step back over your own last `n` mutations, newest first. Exact inverses: a commit is removed, an edit restored verbatim, a delete re-inserted where it was, a materials edit's whole array restored, a condition edit's waste/multiplier pair restored. A whole `detect_rooms` sweep is **one** step. |
@@ -196,6 +199,8 @@ The [generated tool index](../docs/MCP_TOOL_INDEX.md) lists stages and required 
 | `list_rfis` | Every RFI with status, sheet, who raised it (`actor`) and whether an agent-raised one is still `pending`, its linked markup ids, and the finish tags those markups touch. `withdrawn[]` names the numbers `delete_rfi` tombstoned, so a gap in the sequence is explained. |
 | `resolve_rfi` | Answer an **open** RFI: the answer lands as its response, status becomes `answered` (the register's own state), the response date stamps as the panel's would, plus an ISO `resolved_at`. Anything not open is refused—answered, closed, or void—rather than re-answered or revived. |
 | `delete_rfi` | Withdraw an RFI. A **tombstone, never a renumber**: the number stays reserved, the register and the marked set keep printing a gap where it was, and the next RFI takes the next number. Linked markups keep their note and lose the link (the canvas's own delete rule). `undo_last` puts the record and its links back. |
+| `set_pricing` | Price one condition for the estimate (the canvas **Estimate** panel's row): `unit` (SF / SY / LF / EA), `material` and `labor` $ per unit, and `materials` [{name, price}] for its supporting-material rows per their own unit. Material prices the **order** quantity (waste applied), labor the **measured** one. `null` clears a price to *not entered*; `0` is an explicit $0. Prices come from the estimator, never from the agent. One `undo_last` step restores the condition's prices verbatim; they ride `export_takeoff` into the app. |
+| `set_estimate_settings` | The project's **markups** (`tax_pct` on material, `overhead_pct`, `profit_pct` as a `markup` or a `margin`), **proposal** text and layout (`itemized`, `scope_note`, `inclusions`, `exclusions`, `terms`, `valid_days`) and **client** (name, address, reference): the canvas's `estimate_settings`, `bid_proposal` and `client_info`. Only what you pass changes; `undo_last` restores all three. |
 | `read_sheet_text` | Positioned page text (image px), optionally restricted to a region—title blocks, room labels, finish schedules. |
 | `find_text` | **Locate** a known string—the complement to `read_sheet_text` (which returns what a region *says*; this finds *where* a string sits). Case-insensitive substring match per pdf.js text run; each hit's center feeds straight into `one_click`'s seed. |
 | `sheet_graph` | The plan-set INDEX (#87): every sheet's role with evidence, the schedule tables found, every room tag with its stacked name, the detail callouts, and every revision marker (text `Δ2`/`REV 2` tags AND drawn deltas—a bare digit inside a triangle of linework, proven from the sheet's vector geometry—in `revisions`)—how an agent decides WHAT to measure without a human enumerating rooms. |
@@ -204,6 +209,58 @@ The [generated tool index](../docs/MCP_TOOL_INDEX.md) lists stages and required 
 | `sheet_context` | The region's STRUCTURE in one frame: classified vector segments (endpoints as drawn, meta byte per segment), text spans with bboxes, and hatch-family instances with content-derived ids—same pattern spec ⇒ same id anywhere on the sheet, so plan↔legend matching is `id === id`. Decimation is declared and counted on every reply: `kept + dropped === total_in_region`, cap applies longest-first so walls survive. |
 | `get_sheet_vectors` | The STROKES (#367): the sheet's vector layer exactly as the engine is fed it—flat `[x1, y1, x2, y2, …]` points in image px, one meta byte per segment (curve / clip / fill-only / polyline-arc flags, pen width in the high nibble), per-segment stroke luminance, the drawn figure each segment belongs to, the placed-image area, and the PDF layer table with a per-segment layer index. Nothing classified, decimated, or merged—so a reader can run its own room finder, symbol matcher, or wall classifier against the same array and commit through the existing verbs. Paged (default 20,000 segments, ceiling 100,000) with `offset + returned + dropped === total` on every page; `next_cursor` recovers exactly what `dropped` counts. Read-only and stateless. Refuses on a scan and names `view_sheet` as the path. |
 | `view_sheet` | The agent's eyes: render the sheet (or an image-px crop) to PNG. `overlay` burns committed shapes in (solid = human-affirmed, dashed = unreviewed) to verify geometry landed; `grid` burns in a calibrated 1-ft/5-ft measuring grid with foot labels (`"auto"` from the set scale, or the drawing scale like `"1/4"`) so dimensions are counted off cells, not guessed; `marks` (#297) burns disclosure layers in — `question` (withheld placements, orange ?-circle), `struck` (rejections, magenta struck ×), `ring` (the sweep's seed, violet double ring) — in colors off the common CAD pens, so what a reply names, the picture shows. |
+| `stitch_sheets` | Stitch 2–4 plan sheets together into a composite working surface across match-lines (#161)—the browser canvas's Stitched Sheets feature. Shapes traced on the returned stitch reference bind to the composite key (`stitch:<uid>`) and measure continuously across seam boundaries once aligned. By default sheets create in auto-butt layout (`aligned: false`). Member sheets must have calibrated, matching scales. |
+| `align_stitch` | Align member sheets of a composite stitch surface using anchor and moving reference points across a match line. Performs automated seam linework analysis, calculating displacement and leftover rotation across the seam, and withholds the stitch if tolerances are exceeded (0.50" / 0.25°). |
+| `list_stitches` | List all existing composite stitched sheet surfaces in the current session, including dimensions, member sheet placements, inherited scale, alignment status, seam check results, and shape counts. |
+| `rotate_page` | Rotate a sheet's page in the PDF (90, 180, or 270 degrees clockwise) before measuring. Transforms all existing takeoff shapes, markups, and calibrations on that sheet to remain locked to the drawing. |
+| `reorder_pages` | Reorder pages in a loaded PDF document. Remaps all takeoff sheet keys so measurements and annotations follow their pages. |
+| `extract_pages` | Extract a subset of pages from a loaded PDF into a new PDF file on disk. Carries all takeoff shapes and annotations on those pages into the new document (mapped to pages 1..N). |
+| `merge_documents` | Merge multiple PDF files into one combined PDF document on disk. Combines the pages and remaps takeoff keys from all source documents. |
+
+### The Assistant window — talk to your AI from inside the canvas
+
+| Tool | What it does |
+|---|---|
+| `assistant_open` | Starts a private link on `127.0.0.1` (ports 47615–47619; only the OpenTakeoff app's origin may use it, and only after pairing) and returns a one-time `code` and a `link` that opens the canvas already paired. The canvas's Assistant window then shows which AI app is answering ("Powered by Claude Code", "Claude Desktop", "Codex", …) from the name the client announced at initialize. |
+| `assistant_listen` | Waits (default 45 s, max 240 s, with progress pings) for what the person types in the window. `message` → do the work and answer with `assistant_say`; `timeout` → listen again; `sleep` after 10 idle minutes → stop and tell them to say "listen" when they want you back. Every other tool call is mirrored into the window live while you work. |
+| `assistant_say` | Puts your Markdown reply in the window. |
+
+### Trade suites, opened one trade at a time
+
+| Tool | What it does |
+|---|---|
+| `open_suite` | Opens a trade suite: enables that trade's tools and returns its method (the steps, in order, naming the tools) and the condition tags its tools default to. No arguments returns the catalog. `division: "07"` opens every suite of a CSI division. Idempotent; never closes anything. |
+
+Each suite's tools are registered **disabled**, so they are not in `tools/list`
+until `open_suite` enables them and fires `tools/list_changed`. An agent doing a
+roof never carries the plumbing schemas, and a suite's method is handed over
+once, at open time, instead of riding every turn. The long form is the
+`takeoff://wiki/suites` resource.
+
+| Suite | Divisions | Tool it adds |
+|---|---|---|
+| finishes | 09 | none: core tools (`measure_polygon`, `derive_base`, `derive_transitions`, `measure_surface`) |
+| roofing | 07 | `roof_takeoff`: sloped SF and squares from plan-view planes and a stated pitch, true rake/hip/valley LF, drip edge, starter, ridge cap, underlayment, ice & water. Writes the slope factors onto the conditions so every total reads true. |
+| siding | 07 | `siding_takeoff`: net wall SF and squares from elevation faces minus openings, opening trim (doors 3 sides), starter along wall bottoms, corner LF, lap pieces. |
+| soffit_fascia | 07 | `soffit_takeoff`: soffit SF (eave/rake LF × depth from the wall section), fascia LF, wall receiver, attic intake vent area. |
+| glazing | 08 | `glazing_takeoff`: per frame: lites, daylight opening size, glass SF, mullion LF (committed as lines), perimeter sealant. |
+| doors | 08 | none: core tools (`find_schedule`, `sweep_schedule_row`, `count_marks`) |
+| plumbing | 22 | `plumbing_rollup`: fixture counts checked against the schedule QTY, pipe LF with hangers, fittings allowance, insulation. |
+| electrical | 26, 27, 28 | `electrical_rollup`: wire LF per run by conductors and sets, couplings, straps, a box and plate per device, fixture whips. |
+
+The suite tools are derives: they read what is already committed and commit
+what follows as unreviewed shapes or material rows, one `undo_last` step per
+write (each reply says how many). They never measure the drawing themselves and
+never invent a document value: pitch, soffit depth, grid and hanger spacing are
+arguments, and every allowance is reported as an allowance. Each takes
+`units: "metric"` for arguments and a reply in mm, mm², m and m², and names
+any argument it does not take, in `unknown_args` or in its refusal.
+
+A client that reads the tool list only once can pre-open suites:
+
+```bash
+OPENTAKEOFF_MCP_SUITES=roofing,siding npx -y opentakeoff-mcp   # or =all
+```
 
 ### The agent revises its own work
 
@@ -374,19 +431,17 @@ sheet number (`A-101`) wherever a sheet is named.
   has nothing for `detect_rooms`/`sheet_graph`/`resolve_tag` to read: seeds
   come from you (`view_sheet`, then `one_click`). The raster path needs the
   same optional `@napi-rs/canvas` as `view_sheet`.
-- **Stitching is human-only—deliberately, not a gap.** The canvas can join
-  2–4 sheets split at a match line into one composite surface (#200), but no
-  MCP verb creates, aligns, or addresses a stitch. Joining the match line
-  means clicking the same drawn wall junction on both halves—a judgment
-  call with a worse blast radius than a bad scale, because a sloppy align
-  silently skews every quantity that crosses the seam. That stays behind
-  human eyes; it is not staged for later exposure. For a split floor: a
-  human stitches and aligns in the canvas, and over MCP you work each member
-  sheet as its own surface—a seam-crossing room belongs to the canvas.
-  This server also doesn't read the app's additive `stitches` payload field,
-  so a stitched takeoff round-tripped through `import_takeoff` →
-  `export_takeoff` comes back without its stitches—when a stitch is in
-  play, the app's own save is the one to keep.
+- **Stitching is gated by a seam check.** `stitch_sheets` joins 2–4 sheets
+  split at a match line into one composite surface (`stitch:<uid>`), and
+  `align_stitch` places them from a point both sheets draw. A sloppy join
+  skews every quantity that crosses the seam, so the server compares the two
+  sheets' linework after each alignment and refuses to measure across a seam
+  while the stitch is unaligned or the check is withheld (maximum miss over
+  0.5 in by default, any leftover rotation, or no linework at the seam).
+  When it withholds, measure each member sheet on its own and tell the user.
+  `export_takeoff` and `import_takeoff` carry stitch records. The steps,
+  the numbers in the check and a run on a real split pair are in
+  [Stitching sheets over MCP](../docs/MCP_STITCHING.md).
 - `load_plan` replaces the session by default; `merge: true` builds a multi-document working set (#152). Reloading a merged file is refused—reload = replace, deliberately.
 - The takeoff lives in memory. `export_takeoff` (the app's exact save payload,
   nothing lost in translation) and `export_marked_pdf` (the reviewable marked

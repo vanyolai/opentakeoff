@@ -8,6 +8,7 @@ import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { setDeferHashBytes, pdfHashesSettled } from "../src/lib/store.js";
 import { store, localStore, createLocalStore, metaGet, metaPut, metaDelete, isStaleTabError, ANN_SCHEMA, STALE_TAB_MESSAGE, friendlyStoreError } from "../src/lib/store.js";
 import { createCloudStore } from "../src/lib/cloudStore.js";
 
@@ -466,6 +467,191 @@ test("revision trails are per-name: revising A leaves B untouched", async () => 
   assert.deepEqual((await store.listPdfRevisions("b.pdf")).map((r: any) => r.rev), [1]);
 });
 
+// ── #493: overlapping adds of one name ──────────────────────────────────────
+// Callers start adds without awaiting each other (a drop, the file input, the
+// navigator, a second tab), so two adds of one name can overlap. Each caller's
+// bytes must end up as a revision of their own; none may be silently lost.
+
+// Hold crypto.subtle.digest calls until two are waiting (or 50 ms pass), then
+// release them together. Both adds then reach the database at the same moment
+// on every run, so a lost update shows up every time, not by timing luck.
+async function withDigestBarrier<T>(fn: () => Promise<T>): Promise<T> {
+  const subtle = crypto.subtle as any;
+  const orig = subtle.digest;
+  let waiting: (() => void)[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const release = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    const go = waiting;
+    waiting = [];
+    go.forEach((f) => f());
+  };
+  subtle.digest = function (...args: any[]) {
+    const held = new Promise<void>((f) => waiting.push(f));
+    if (waiting.length >= 2) release();
+    else timer ??= setTimeout(release, 50);
+    return held.then(() => orig.apply(this, args));
+  };
+  try { return await fn(); } finally { release(); delete subtle.digest; if (subtle.digest !== orig) subtle.digest = orig; }
+}
+
+// pdf_revs records for one name, read outside the store module
+async function rawRevCount(name: string): Promise<number> {
+  const db = await rawOpen(3);
+  const n = await new Promise<number>((res, rej) => {
+    const r = db.transaction("pdf_revs").objectStore("pdf_revs").index("name").count(IDBKeyRange.only(name));
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  db.close();
+  return n;
+}
+
+const byRev = (a: any, b: any) => a.rev - b.rev;
+
+test("addPdf (#493): two overlapping adds of a stored name each become a revision", async () => {
+  await store.addPdf(fileOf("race.pdf", [1]));
+  const [a, b] = await withDigestBarrier(() => Promise.all([
+    store.addPdf(fileOf("race.pdf", [2])),
+    store.addPdf(fileOf("race.pdf", [3])),
+  ]));
+  assert.deepEqual([a, b].sort(byRev), [
+    { name: "race.pdf", rev: 2, prev_rev: 1, revised: true },
+    { name: "race.pdf", rev: 3, prev_rev: 2, revised: true },
+  ]);
+  // each returned rev holds that caller's bytes
+  assert.deepEqual(await store.loadPdfRevisionData("race.pdf", a.rev), new Uint8Array([2]));
+  assert.deepEqual(await store.loadPdfRevisionData("race.pdf", b.rev), new Uint8Array([3]));
+  assert.deepEqual(await store.loadPdfRevisionData("race.pdf", 1), new Uint8Array([1]));
+  const current = await store.loadPdfData("race.pdf");
+  assert.deepEqual(current, await store.loadPdfRevisionData("race.pdf", 3));
+  assert.deepEqual((await store.listPdfRevisions("race.pdf")).map((r: any) => r.rev), [3, 2, 1]);
+  assert.deepEqual(await store.listSheets(), [{ name: "race.pdf" }]);
+  assert.equal(await store.pdfHash("race.pdf"), await sha([...current]));
+});
+
+test("addPdf (#493): two overlapping adds of a new name are rev 1 and rev 2", async () => {
+  const [a, b] = await withDigestBarrier(() => Promise.all([
+    store.addPdf(fileOf("new.pdf", [4])),
+    store.addPdf(fileOf("new.pdf", [5])),
+  ]));
+  assert.deepEqual([a, b].sort(byRev), [
+    { name: "new.pdf", rev: 1 },
+    { name: "new.pdf", rev: 2, prev_rev: 1, revised: true },
+  ]);
+  assert.deepEqual(await store.loadPdfRevisionData("new.pdf", a.rev), new Uint8Array([4]));
+  assert.deepEqual(await store.loadPdfRevisionData("new.pdf", b.rev), new Uint8Array([5]));
+  assert.deepEqual((await store.listPdfRevisions("new.pdf")).map((r: any) => r.rev), [2, 1]);
+});
+
+test("addPdf (#493): two overlapping adds of identical new bytes are one revision, the second unchanged", async () => {
+  const res = await withDigestBarrier(() => Promise.all([
+    store.addPdf(fileOf("same.pdf", [6, 6])),
+    store.addPdf(fileOf("same.pdf", [6, 6])),
+  ]));
+  const sorted = res.sort((x: any, y: any) => Number(!!x.unchanged) - Number(!!y.unchanged));
+  assert.deepEqual(sorted, [{ name: "same.pdf", rev: 1 }, { name: "same.pdf", rev: 1, unchanged: true }]);
+  assert.deepEqual((await store.listPdfRevisions("same.pdf")).map((r: any) => r.rev), [1]);
+});
+
+test("addPdf (#493): an add from a second tab (another module instance) can't lose this tab's add", async () => {
+  // a fresh copy of the module: its own memos and state, the same indexedDB
+  const tab2 = await import(new URL("../src/lib/store.js?tab2", import.meta.url).href);
+  assert.notStrictEqual(tab2.store, store, "a separate module instance");
+  await store.addPdf(fileOf("tabs.pdf", [1]));
+  const [a, b] = await withDigestBarrier(() => Promise.all([
+    store.addPdf(fileOf("tabs.pdf", [2])),
+    tab2.store.addPdf(fileOf("tabs.pdf", [3])),
+  ]));
+  assert.deepEqual([a, b].map((r) => [r.rev, r.prev_rev]).sort((x, y) => x[0] - y[0]), [[2, 1], [3, 2]]);
+  assert.deepEqual((await store.listPdfRevisions("tabs.pdf")).map((r: any) => r.rev), [3, 2, 1]);
+  assert.deepEqual(await store.loadPdfRevisionData("tabs.pdf", a.rev), new Uint8Array([2]));
+  assert.deepEqual(await store.loadPdfRevisionData("tabs.pdf", b.rev), new Uint8Array([3]));
+  assert.deepEqual(await store.loadPdfRevisionData("tabs.pdf", 1), new Uint8Array([1]));
+});
+
+test("addPdf (#493): two overlapping adds over a legacy record keep all three files", async () => {
+  await seedLegacy("legacy-race.pdf", [5, 5]);
+  const [a, b] = await withDigestBarrier(() => Promise.all([
+    store.addPdf(fileOf("legacy-race.pdf", [6, 6])),
+    store.addPdf(fileOf("legacy-race.pdf", [7, 7])),
+  ]));
+  assert.deepEqual([a, b].sort(byRev).map((r: any) => [r.rev, r.prev_rev]), [[2, 1], [3, 2]]);
+  assert.deepEqual(await store.loadPdfRevisionData("legacy-race.pdf", 1), new Uint8Array([5, 5]));
+  assert.deepEqual(await store.loadPdfRevisionData("legacy-race.pdf", a.rev), new Uint8Array([6, 6]));
+  assert.deepEqual(await store.loadPdfRevisionData("legacy-race.pdf", b.rev), new Uint8Array([7, 7]));
+  assert.deepEqual((await store.listPdfRevisions("legacy-race.pdf")).map((r: any) => r.rev), [3, 2, 1]);
+});
+
+test("addPdf (#493): a legacy record's identity is backfilled in the add's own transaction", async () => {
+  await seedLegacy("bf.pdf", [5, 5]);
+  await store.addPdf(fileOf("bf.pdf", [5, 5]));
+  // pdfHashIfKnown hashes nothing, so a hash here is the stored backfill
+  assert.equal(await store.pdfHashIfKnown("bf.pdf"), await sha([5, 5]));
+  // an identical add overlapping a changed one can't undo the revision
+  for (const order of ["same-first", "changed-first"]) {
+    (globalThis as any).indexedDB = new IDBFactory();
+    await seedLegacy("bf.pdf", [5, 5]);
+    const same = () => store.addPdf(fileOf("bf.pdf", [5, 5]));
+    const changed = () => store.addPdf(fileOf("bf.pdf", [6, 6]));
+    const res = await withDigestBarrier(() => Promise.all(order === "same-first" ? [same(), changed()] : [changed(), same()]));
+    const [s, c] = order === "same-first" ? res : [res[1], res[0]];
+    // whichever commits first, each caller's rev holds its bytes; if the
+    // changed add lands first, the identical one is a revision back to [5, 5]
+    assert.deepEqual(await store.loadPdfRevisionData("bf.pdf", c.rev), new Uint8Array([6, 6]), order);
+    assert.deepEqual(await store.loadPdfRevisionData("bf.pdf", s.rev), new Uint8Array([5, 5]), order);
+    assert.deepEqual(await store.loadPdfRevisionData("bf.pdf", 1), new Uint8Array([5, 5]), order);
+    const trail = await store.listPdfRevisions("bf.pdf");
+    assert.deepEqual(await store.loadPdfData("bf.pdf"), await store.loadPdfRevisionData("bf.pdf", trail[0].rev), `${order}: current is the newest rev`);
+  }
+});
+
+test("addPdf (#493): a write that fails mid-revision keeps the old state and rejects with the real error", async () => {
+  await store.addPdf(fileOf("fail.pdf", [1, 1]));
+  const boom = Object.assign(new Error("put failed"), { name: "BoomError" });
+  const proto = (globalThis as any).IDBObjectStore.prototype;
+  const orig = proto.put;
+  // the pdfs put comes after the pdf_revs archive put, so this tests rollback
+  proto.put = function (this: any, ...args: any[]) {
+    if (this.name === "pdfs") throw boom;
+    return orig.apply(this, args);
+  };
+  try {
+    await assert.rejects(store.addPdf(fileOf("fail.pdf", [2, 2])), (e) => e === boom);
+  } finally {
+    proto.put = orig;
+  }
+  assert.deepEqual(await store.loadPdfData("fail.pdf"), new Uint8Array([1, 1]));
+  assert.deepEqual((await store.listPdfRevisions("fail.pdf")).map((r: any) => [r.rev, r.current]), [[1, true]]);
+  assert.equal(await rawRevCount("fail.pdf"), 0, "the archive put rolled back");
+  await probeUpgrade(4);
+});
+
+// A smoke test, not a race pin: under fake-indexeddb the remove commits first
+// in both call orders (its cache check awaits before its delete), so only the
+// "file survives" branch runs. It passes on main too; it guards the outcome,
+// not the fix.
+test("addPdf (#493): an add overlapping a remove of the same name leaves no orphan revision", async () => {
+  for (const order of ["add-first", "remove-first"]) {
+    (globalThis as any).indexedDB = new IDBFactory();
+    await store.addPdf(fileOf("ar.pdf", [1]));
+    const add = () => store.addPdf(fileOf("ar.pdf", [2]));
+    const remove = () => store.removePdf("ar.pdf");
+    await Promise.all(order === "add-first" ? [add(), remove()] : [remove(), add()]);
+    const sheets = await store.listSheets();
+    const revs = await rawRevCount("ar.pdf");
+    if (sheets.length) {
+      assert.deepEqual(sheets, [{ name: "ar.pdf" }], order);
+      assert.deepEqual(await store.loadPdfData("ar.pdf"), new Uint8Array([2]), `${order}: the survivor is the new file`);
+      const trail = await store.listPdfRevisions("ar.pdf");
+      assert.equal(revs, trail.filter((r: any) => !r.current).length, order);
+    } else {
+      assert.equal(revs, 0, `${order}: no revision outlives its file`);
+    }
+  }
+});
+
 // ── #471 OCR page cache: pdfHash and removal cleanup ────────────────────────
 // pdfHash is the cache's identity for a file's bytes. Removal drops the
 // removed file's cached reads unless a remaining file or revision still
@@ -795,4 +981,71 @@ test("removePdf: a legacy file hashed this session keeps the reads of the bytes 
   await metaPut(ocrKey(await sha([6, 6])), OCR_VAL);
   await store.removePdf("k-a.pdf");
   assert.deepEqual(await metaGet(ocrKey(await sha([6, 6]))), OCR_VAL);
+});
+
+// ── #580: a PDF is stored as a Blob and read by byte range ──────────────────
+test("addPdf stores a real File as a Blob; every reader gets the same bytes, and a revision keeps its own", async () => {
+  const v1 = new TextEncoder().encode("%PDF-1.7 first revision"), v2 = new TextEncoder().encode("%PDF-1.7 second, longer revision");
+  const out = await localStore.addPdf(new File([v1], "set.pdf", { type: "application/pdf", lastModified: 5 }));
+  assert.deepEqual(out, { name: "set.pdf", rev: 1 });
+  const db = await rawOpen(3);
+  const rec: any = await new Promise((res, rej) => { const q = db.transaction("pdfs").objectStore("pdfs").get("set.pdf"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  db.close();
+  assert.ok(rec.bytes instanceof Blob, "the record holds a Blob");
+  assert.ok(!(rec.bytes instanceof File), "not the File: its name and date aren't the record's");
+  assert.deepEqual([...await localStore.loadPdfData("set.pdf")], [...v1]);
+  const src = await localStore.loadPdfSource("set.pdf");
+  assert.equal((await localStore.loadPdfSource("set.pdf")).key, src.key, "one identity while the bytes stand");
+  assert.deepEqual([...new Uint8Array(await src.blob.slice(0, 8).arrayBuffer())], [...v1.slice(0, 8)], "a range reads just that range");
+  // same bytes: no revision; changed bytes: the old Blob is archived as it is
+  assert.equal((await localStore.addPdf(new File([v1], "set.pdf"))).unchanged, true);
+  assert.equal((await localStore.addPdf(new File([v2], "set.pdf"))).revised, true);
+  assert.deepEqual([...await localStore.loadPdfRevisionData("set.pdf", 1)], [...v1]);
+  assert.deepEqual([...await localStore.loadPdfRevisionData("set.pdf", 2)], [...v2]);
+  const src2 = await localStore.loadPdfSource("set.pdf");
+  assert.notEqual(src2.key, src.key, "new bytes, new key: a worker never reuses the old document");
+  assert.equal(src2.blob.size, v2.byteLength);
+});
+
+test("loadPdfSource reads a record stored before #580 (an ArrayBuffer, perhaps with no hash)", async () => {
+  await localStore.listSheets(); // create the database at the current version
+  const bytes = new TextEncoder().encode("%PDF-1.4 legacy");
+  const db = await rawOpen(3);
+  await new Promise<void>((res, rej) => { const t = db.transaction("pdfs", "readwrite"); t.objectStore("pdfs").put({ name: "old.pdf", bytes: bytes.buffer.slice(0) }); t.oncomplete = () => res(); t.onerror = () => rej(t.error); });
+  db.close();
+  const src = await localStore.loadPdfSource("old.pdf");
+  assert.deepEqual([...new Uint8Array(await src.blob.arrayBuffer())], [...bytes]);
+  assert.ok(src.key.startsWith("old.pdf\u0000"), "keyed by name, revision, time and size");
+  assert.deepEqual([...await localStore.loadPdfData("old.pdf")], [...bytes]);
+  await assert.rejects(localStore.loadPdfSource("missing.pdf"), /not found/);
+});
+
+test("a large file under a new name is stored before it is hashed, and gains its hash after (#580)", async () => {
+  setDeferHashBytes(8);
+  try {
+    const bytes = new TextEncoder().encode("%PDF-1.7 a set big enough to store first"), other = new TextEncoder().encode("%PDF-1.7 a different, revised set of sheets");
+    const hashOf = async (b: Uint8Array) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", b as BufferSource)), (x) => x.toString(16).padStart(2, "0")).join("");
+    const raw = async () => { const db = await rawOpen(3); const rec: any = await new Promise((res, rej) => { const q = db.transaction("pdfs").objectStore("pdfs").get("big.pdf"); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); db.close(); return rec; };
+    assert.deepEqual(await localStore.addPdf(new File([bytes], "big.pdf")), { name: "big.pdf", rev: 1 });
+    const key = (await localStore.loadPdfSource("big.pdf")).key;
+    // asked for before the write-back: the one hashing answers, nothing is hashed twice
+    assert.equal(await localStore.pdfHash("big.pdf"), await hashOf(bytes));
+    await pdfHashesSettled();
+    assert.equal((await raw()).hash, await hashOf(bytes), "the hash is written back");
+    assert.equal((await localStore.loadPdfSource("big.pdf")).key, key, "the source's identity doesn't move when the hash lands");
+    assert.deepEqual([...await localStore.loadPdfData("big.pdf")], [...bytes]);
+    // a name the store has takes the hashed path: same bytes no-op, new bytes a revision
+    assert.equal((await localStore.addPdf(new File([bytes], "big.pdf"))).unchanged, true);
+    assert.equal((await localStore.addPdf(new File([other], "big.pdf"))).revised, true);
+
+    // re-dropped with new bytes BEFORE the write-back: the revision stands, and
+    // the late hash of the first bytes is not written onto it
+    await localStore.removePdf("big.pdf");
+    await localStore.addPdf(new File([bytes], "big.pdf"));
+    const second = await localStore.addPdf(new File([other], "big.pdf"));
+    assert.equal(second.revised, true); assert.equal(second.rev, 2);
+    await pdfHashesSettled();
+    assert.equal((await raw()).hash, await hashOf(other));
+    assert.equal((await localStore.listPdfRevisions("big.pdf")).find((r: any) => r.rev === 1).hash, await hashOf(bytes));
+  } finally { setDeferHashBytes(32 * 1024 * 1024); }
 });

@@ -54,40 +54,41 @@ infrastructure, with the original electrical proof symbols retained. Its line
 art is shared by the picker, condition list, canvas, Report and Marked Set
 export. Custom symbol import and company-specific libraries come later.
 
-### Discipline profile
+### Upstream Trade integration
 
-Add a discipline profile that controls which interface sections OpenTakeoff
-renders. The first useful split is:
+Do **not** introduce a parallel downstream discipline-profile schema. Upstream
+now owns the domain filter through its Trade model and ships an
+**Electrical & low voltage** suite. Downstream electrical/low-voltage work must
+build on that model:
 
-- the current flooring-oriented workspace;
-- an electrical workspace that omits flooring-only interface.
+- the condition's upstream `trade` field remains the trade/domain assignment;
+- the canvas Trade view remains the show/hide surface for trade-scoped work;
+- downstream `object_style` controls how Count objects inside those conditions
+  render (square/symbol, plan label, authored-layer default);
+- per-instance `shape.object` carries the instance label and future layer
+  override without changing the upstream quantity model.
 
-The profile is a presentation and capability-selection layer. It does not
-create a second project schema, discard hidden settings, or fork quantity
-calculation. Switching profiles restores the controls and data that belong to
-the selected profile.
-
-The first implementation must inventory the current flooring-specific
-interface before it fixes the exact electrical profile. Roll-goods layout,
-seams, flooring transitions, grout tools, and other finish-floor controls are
-candidates for the flooring profile; the inventory decides the boundary.
+CCTV, Data, Access, Intrusion and Fire therefore remain user-defined conditions
+inside the upstream Electrical & low-voltage trade rather than becoming a second
+classification system.
 
 ### Acceptance criteria
 
-The milestone is usable when:
+The integrated milestone is usable when:
 
-1. The selected discipline profile persists across reloads.
-2. The profile changes the rendered tool and panel surface without deleting
-   data.
-3. A user-defined object type stores either the colored-square marker or a
-   built-in symbol identifier.
-4. Existing project data continues to render with colored squares.
-5. A placed object uses its selected marker consistently on the canvas and in
-   every existing edit, save, import, and export round trip that carries the
-   object.
-6. Counts and quantity calculations remain independent of marker style.
-7. Automated tests cover profile persistence, hidden-feature data retention,
-   legacy marker defaults, symbol persistence, and marker-independent totals.
+1. Upstream Trade view and Electrical & low-voltage suites continue to work.
+2. A user-defined condition stores either the colored-square marker or a
+   built-in symbol identifier without changing its EA math.
+3. Existing projects continue to render with colored squares.
+4. Plan labels support none, condition tag, custom text and stable sequential
+   instance labels.
+5. Main canvas, reference pane, Report legend and Marked Set use the same object
+   presentation model.
+6. Save/load, copy/paste, templates and undo/redo preserve object presentation.
+7. Supporting-material coverage follows imperial/metric display units without
+   changing stored rates or upstream assembly rules.
+8. Automated tests cover legacy defaults, symbol/label persistence,
+   marker-independent totals and metric coverage.
 
 ## Near-term reporting note
 
@@ -96,10 +97,10 @@ custom column may already express this value, so it does not block the first
 milestone. After the custom-column path is verified, add the calculation as a
 predefined column when that improves the default electrical workflow.
 
-The `feature/metric-materials` branch is the current metric foundation. It
-converts material coverage input and display between square feet or linear feet
-and square meters or meters, and it makes the live counter follow the selected
-display units. Merge it into `selfhosted` separately from the first milestone.
+Metric materials are now part of the self-hosted integration. Coverage input
+and display convert between SF/LF and m²/m, CSV/XLSX coverage labels follow the
+active unit mode, and the live counter uses the same display units. Upstream
+assembly order rules and item waste remain authoritative.
 
 ## Later milestones
 
@@ -127,10 +128,10 @@ more browser-only state.
 
 Resolve these questions before implementation reaches the affected surface:
 
-- the name and extensibility model of the discipline profiles;
-- whether the selected profile belongs to one project or to the whole local
-  workspace;
-- the exact controls hidden by the first electrical profile;
+- whether downstream needs saved Trade-view presets beyond upstream's current
+  Trade selector;
+- which finish-only controls should eventually collapse automatically while the
+  Electrical & low voltage trade is active, without creating a second profile;
 - whether symbols are colorized, fixed-color, or offer both behaviors;
 - symbol size, rotation, anchor, and scale rules;
 - where marker selection lives in the current condition and object editor;
@@ -145,5 +146,5 @@ Resolve these questions before implementation reaches the affected surface:
 - `selfhosted` is the downstream integration branch.
 - Feature branches start from `selfhosted` and open pull requests back to
   `selfhosted`.
-- `feature/metric-materials` predates this policy but currently shares the same
-  base commit and can target `selfhosted` directly.
+- Temporary sync branches may merge upstream into `selfhosted`, but downstream
+  feature work stays off `main`.

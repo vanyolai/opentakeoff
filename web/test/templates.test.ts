@@ -17,6 +17,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { sanitizeTemplates } from "../src/lib/templates.js";
+import { conditionToTemplate, instantiateTemplate } from "../src/lib/canvasUtil.js";
 import { store } from "../src/lib/store.js";
 
 beforeEach(() => {
@@ -82,6 +83,49 @@ test("color/fill/hatch: non-string values are removed so the canvas defaults; st
 test("unknown item fields survive the round-trip (scale_source precedent)", () => {
   const saved = [{ finish_tag: "A", waste_pct: 8, future_field: { v: 1 }, materials: [{ name: "X", future_mat: true }] }];
   assert.deepEqual(sanitizeTemplates(JSON.parse(JSON.stringify(saved))), saved);
+});
+
+test("condition template preserves Trade + object presentation and resets issued sequence numbers", () => {
+  const condition = {
+    id: "cnd-live",
+    created_at: "2026-11-17T12:00:00.000Z",
+    finish_tag: "CAM-1",
+    color: "#336699",
+    fill: "#336699",
+    hatch: "solid",
+    trade: "electrical",
+    waste_pct: 0,
+    object_style: {
+      marker: "symbol",
+      symbol_id: "camera",
+      label_mode: "sequence",
+      label_prefix: "CAM-",
+      next_sequence: 37,
+      layer_id: "cctv-devices",
+    },
+    materials: [],
+  };
+
+  const template = conditionToTemplate(condition as any);
+  assert.equal(template.trade, "electrical");
+  assert.deepEqual(template.object_style, {
+    marker: "symbol",
+    symbol_id: "camera",
+    label_mode: "sequence",
+    label_prefix: "CAM-",
+    next_sequence: 1,
+    layer_id: "cctv-devices",
+  });
+
+  const restored = instantiateTemplate(template as any);
+  assert.equal(restored.trade, "electrical");
+  assert.equal(restored.object_style.marker, "symbol");
+  assert.equal(restored.object_style.symbol_id, "camera");
+  assert.equal(restored.object_style.label_mode, "sequence");
+  assert.equal(restored.object_style.label_prefix, "CAM-");
+  assert.equal(restored.object_style.next_sequence, 1);
+  assert.equal(restored.object_style.layer_id, "cctv-devices");
+  assert.notEqual(restored.id, condition.id);
 });
 
 // ── store.loadTemplates wiring ───────────────────────────────────────────────
