@@ -23,7 +23,7 @@ import { REPORT_SCHEMA } from "./takeoffConstants.ts";
 import { csvEsc as esc } from "./csv.js";
 import { GETTERS, CSV_PROFILE, colGetter, floorPerimeterLf, applyUnits, METRIC_CSV_LABELS } from "./reportColumns.js";
 import { M_PER_FT, M2_PER_SF } from "./units";
-import { coverageToDisplay, coverageFromDisplay, coverageBasisLabel } from "./coverageUnits.js";
+import { coverageToDisplay, coverageFromDisplay } from "./coverageUnits.js";
 import { attrValue } from "./conditionColumns.js";
 import { shapeLabelValue } from "./shapeLabels.js";
 import { compareSheetKeys } from "./sheetKey"; // NOT ./sheets — that module imports pdfjs-dist
@@ -56,7 +56,12 @@ export function itemRaw(m, basisVal) {
   if (!(per > 0)) return 0;
   return itemRule(m) === "each" ? basisVal * per : basisVal / per;
 }
-export const basisLabel = (b, units = "imperial") => coverageBasisLabel(b, units);
+export const basisLabel = (b, units = "imperial") => {
+  if (b === "count") return "EA";
+  if (b === "linear") return units === "metric" ? "m" : "LF";
+  if (b === "seam_lf") return units === "metric" ? "seam m" : "seam LF";
+  return units === "metric" ? "m2" : "SF";
+};
 // "1 gal / 150 SF", "2 ea / 1 EA", plus "+ 5% waste" when the item carries one —
 // the Coverage cell of the CSV and Excel materials tabs. Metric mode changes
 // only the displayed rate/basis; stored coverage remains in native SF/LF/EA.

@@ -68,6 +68,7 @@ export const instantiateTemplate = (t) => ({
   color: t.color || PALETTE[0], fill: t.fill ?? t.color ?? PALETTE[0],
   hatch: t.hatch || "solid", multiplier: 1, waste_pct: Number(t.waste_pct) || 0,
   object_style: templateObjectStyle(t.object_style),
+  ...(typeof t.trade === "string" && t.trade ? { trade: t.trade } : {}),
   ...(t.height_ft != null ? { height_ft: t.height_ft } : {}),
   ...(t.thickness_in != null ? { thickness_in: t.thickness_in } : {}),
   ...(t.rise_ft != null ? { rise_ft: t.rise_ft } : {}),   // #441 — a conduit template's legs are part of what it is
@@ -85,6 +86,8 @@ export const instantiateTemplate = (t) => ({
 export const conditionToTemplate = (c) => ({
   finish_tag: c.finish_tag, color: c.color, fill: c.fill, hatch: c.hatch || "solid",
   waste_pct: c.waste_pct || 0,
+  object_style: templateObjectStyle(c.object_style),
+  ...(typeof c.trade === "string" && c.trade ? { trade: c.trade } : {}),
   ...(c.height_ft != null ? { height_ft: c.height_ft } : {}),
   ...(c.thickness_in != null ? { thickness_in: c.thickness_in } : {}),
   ...(c.rise_ft != null ? { rise_ft: c.rise_ft } : {}),
