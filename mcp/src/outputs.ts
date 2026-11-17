@@ -442,6 +442,9 @@ export const exportTakeoffOutput = {
   schema: z.string(),
   project_name: z.string(),
   units: z.string().optional().describe("Present only for a metric project; absent means imperial — the app's own diff-only convention"),
+  client_info: z.object({}).passthrough().optional().describe("Who the proposal is for (client_name, client_address, reference) — present once set_estimate_settings or an import set it"),
+  estimate_settings: z.object({}).passthrough().optional().describe("The project's markups (tax_pct, overhead_pct, profit_pct, profit_mode) — present once set"),
+  bid_proposal: z.object({}).passthrough().optional().describe("The project's proposal layout and text — present once set"),
   sheets: z.array(z.object({
     sheet_id: z.string(), units_per_px: z.number(),
     scale_source: z.string().optional().describe("How the exported calibration was established"),
@@ -643,7 +646,8 @@ export const undoLastOutput = {
     // undo_last's reply against this enum, so a journal op missing from it
     // fails the undo call itself. Add the op here in the same change.
     op: z.enum(["commit", "scale", "edit", "annotation_text", "delete", "materials", "condition", "approval", "duplicate_condition", "split_condition", "cutout", "cutout_restore", "runcut", "rfi_create", "rfi_resolve", "rfi_delete",
-      "proposal_open", "proposal_revise", "proposal_withdraw", "condition_proposal", "condition_proposal_withdraw", "condition_proposal_accept"]),
+      "proposal_open", "proposal_revise", "proposal_withdraw", "condition_proposal", "condition_proposal_withdraw", "condition_proposal_accept",
+      "pricing", "estimate_settings"]),
     tool: z.string().describe("The tool call this step came from"),
     shapes: z.number().int().describe("Shapes affected by reversing this step — 0 for a materials step (it restores a condition's supporting-materials rows, not shapes), for a condition step (it restores the waste/multiplier pair), and for an approval step (it re-seats or removes a verdict mark)"),
   })).describe("Newest first"),
@@ -713,21 +717,21 @@ export const exportReportOutput = {
   generated_with: z.string(),
   sheets: z.array(z.object({ sheet_id: z.string(), sheet: z.string(), scale_source: z.string() }).passthrough()).describe("Scale provenance per sheet — how each scale was set"),
   conditions: z.array(summaryRow.extend({ materials: z.array(reportMaterialLine) }).passthrough()).describe("conditionTotals rows: gross + *_net quantities AND the computed materials buy list"),
-  by_sheet: z.array(z.object({ sheet_id: z.string(), sheet: z.string(), rows: z.array(z.record(z.unknown())) }).passthrough()).describe("BASE per-sheet subtotals — multiplier NOT applied, no waste, no materials"),
+  by_sheet: z.array(z.object({ sheet_id: z.string(), sheet: z.string(), rows: z.array(z.record(z.string(), z.unknown())) }).passthrough()).describe("BASE per-sheet subtotals — multiplier NOT applied, no waste, no materials"),
   totals: z.object({
     total_sf: z.number(), total_sf_net: z.number(),
     lf: z.number(), lf_net: z.number(),
     ea: z.number(), sy_net: z.number(),
   }).passthrough(),
   materials: z.array(z.object({ name: z.string(), unit: z.string(), qty: z.number() }).passthrough()).describe("Project-wide buy list — condition rows summed by (name, unit)"),
-  markups: z.array(z.record(z.unknown())),
-  rfis: z.array(z.record(z.unknown())),
-  condition_columns: z.array(z.record(z.unknown())),
+  markups: z.array(z.record(z.string(), z.unknown())),
+  rfis: z.array(z.record(z.string(), z.unknown())),
+  condition_columns: z.array(z.record(z.string(), z.unknown())),
   shape_labels: z.array(z.string()),
-  by_label: z.array(z.record(z.unknown())),
+  by_label: z.array(z.record(z.string(), z.unknown())),
   units: z.string(),
   display_units: z.string(),
-  roll_goods: z.array(z.record(z.unknown())).describe("Roll-goods order rows (#136) — order_lf / rolls / order_qty per roll-goods condition, ×N applied; empty when no condition carries a roll_setup (always the case for a headless session today)"),
+  roll_goods: z.array(z.record(z.string(), z.unknown())).describe("Roll-goods order rows (#136) — order_lf / rolls / order_qty per roll-goods condition, ×N applied; empty when no condition carries a roll_setup (always the case for a headless session today)"),
   proposed_condition_edits: z.array(proposedConditionEditRow).optional().describe("Pending condition-edit proposals (#365) — the rows above print the CURRENT knobs; each entry here carries the proposed values beside them. Present only when any are pending, so a proposal-free report is byte-identical"),
 };
 
@@ -845,7 +849,7 @@ export const resolveTagOutput = {
     surface: z.string().describe("The schedule column: FLOOR / BASE / WALL / …"),
     code: z.string(),
     source: wireEvidence,
-    definition: z.object({ cells: z.record(z.string()), source: wireEvidence }).optional()
+    definition: z.object({ cells: z.record(z.string(), z.string()), source: wireEvidence }).optional()
       .describe("The finish/material-schedule row this code chains to, when one exists"),
   })).optional(),
   sources: z.array(wireEvidence).optional().describe("The chain: plan tag → schedule row (the row cites the sheet that CARRIES it — under a continuation that is the CONT'D sheet)"),
@@ -885,7 +889,7 @@ export const sweepScheduleRowOutput = {
     sheet: z.string(),
     table: z.string().describe("The table's title (or kind, when untitled)"),
     key: z.string(),
-    cells: z.record(z.string()).describe("The row's cells, header → text — what the schedule SAYS this mark is"),
+    cells: z.record(z.string(), z.string()).describe("The row's cells, header → text — what the schedule SAYS this mark is"),
     citation: wireEvidence,
   }).describe("The schedule row the sweep was seeded from — the condition's source"),
   anchor: z.object({
@@ -1148,8 +1152,220 @@ export const countMarksOutput = {
     committed: z.object({ committed: z.number().int(), ea_total: z.number() }).optional(),
   })),
   total: z.number().int().describe("All counted instances across every mark"),
-  per_sheet: z.array(z.object({ sheet: z.string(), counts: z.record(z.number().int()) })),
+  per_sheet: z.array(z.object({ sheet: z.string(), counts: z.record(z.string(), z.number().int()) })),
   excluded_in_tables: z.number().int().optional().describe("Tag occurrences inside a schedule table's own region — row labels, never instances"),
   skipped: z.array(z.object({ sheet: z.string(), role: z.string(), reason: z.string() })),
   complete: z.boolean(),
+};
+
+// ── estimate (lib/estimate.js) ──────────────────────────────────────────────
+const unpricedRow = z.object({
+  id: z.string(), finish_tag: z.string(),
+  unit: z.enum(["SF", "SY", "LF", "EA"]).optional().describe("Which of the condition's lines is unpriced"),
+  status: z.enum(["partial", "unpriced"]),
+  missing: z.array(z.string()).describe('What was never entered: "material", "labor", or "material row: <name>"'),
+}).passthrough();
+const estimateLine = z.object({
+  id: z.string(), finish_tag: z.string(), unit: z.enum(["SF", "SY", "LF", "EA"]),
+  key: z.string().optional().describe('"<condition id>:<unit>" — one line per quantity kind the condition carries'),
+  main: z.boolean().optional().describe("The condition's first line: priced by pricing.unit / material / labor and carrying its assembly items; the others price from pricing.by_unit[unit]"),
+  optional: z.boolean().optional().describe("A bordered linear run's derived line: priceable, but an empty rate is carried in the main line, never missing"),
+  material_qty: z.number().describe("Order quantity in the unit — waste applied (EA never carries waste)"),
+  labor_qty: z.number().describe("Measured quantity in the unit — no waste"),
+  material_rate: z.number().nullable().describe("$ per unit; null = never entered"),
+  labor_rate: z.number().nullable().describe("$ per unit; null = never entered"),
+  material_cost: z.number(), labor_cost: z.number(),
+  materials: z.array(z.object({ name: z.string(), unit: z.string(), qty: z.number(), price: z.number().nullable(), cost: z.number(), priced: z.boolean() }).passthrough()),
+  materials_cost: z.number(), total: z.number(),
+  status: z.enum(["priced", "partial", "unpriced", "optional"]).describe('optional = an optional line nobody priced (not in unpriced)'),
+  missing: z.array(z.string()),
+}).passthrough();
+const estimateSettings = z.object({ tax_pct: z.number(), overhead_pct: z.number(), profit_pct: z.number(), profit_mode: z.enum(["markup", "margin"]) }).passthrough();
+
+export const setPricingOutput = {
+  condition: z.string(), condition_id: z.string(),
+  pricing: z.object({
+    unit: z.enum(["SF", "SY", "LF", "EA"]).optional(), material: z.number().optional(), labor: z.number().optional(),
+    by_unit: z.record(z.string(), z.object({ material: z.number().optional(), labor: z.number().optional() }).passthrough()).optional().describe("The other lines' rates, keyed by their unit"),
+  }).passthrough().describe("The condition's prices after this write; an absent field is not entered"),
+  material_prices: z.array(z.object({ name: z.string(), unit: z.string(), price: z.number().nullable() }).passthrough()),
+  line: estimateLine.nullable().describe("The line this call priced (the main line unless `line` named another), after the write; null while it has no committed quantity of that kind"),
+  lines: z.array(estimateLine).describe("Every estimate line of the condition, main first"),
+  note: z.string().optional(),
+};
+export const setEstimateSettingsOutput = {
+  estimate_settings: estimateSettings.nullable(),
+  bid_proposal: z.object({}).passthrough().nullable(),
+  client_info: z.object({}).passthrough(),
+};
+export const estimateSummaryOutput = {
+  settings: estimateSettings,
+  settings_source: z.string(),
+  lines: z.array(estimateLine),
+  material: z.number().describe("Condition material + supply rows"), labor: z.number(),
+  tax: z.number().describe("Sales tax on material"), cost: z.number().describe("material + labor + tax"),
+  overhead: z.number(), profit: z.number(),
+  total: z.number().describe("The base bid — 'priced so far' while complete is false"),
+  complete: z.boolean(),
+  unpriced: z.array(unpricedRow),
+  warnings: z.array(z.string()),
+  note: z.string(),
+};
+export const exportEstimateOutput = {
+  path: z.string(), tabs: z.array(z.string()), total: z.number(), complete: z.boolean(), unpriced: z.array(unpricedRow),
+};
+export const exportProposalOutput = {
+  path: z.string(), pages: z.number().int(), base_bid: z.number(), itemized: z.boolean(), complete: z.boolean(), unpriced: z.array(unpricedRow),
+  note: z.string().optional(),
+};
+
+// ── the Assistant window (assistantBridge.ts) ──
+const poweredBy = z.object({ name: z.string().describe("The AI app driving this server, as it announced itself (e.g. claude-ai, claude-code, codex-mcp-client)"), version: z.string() });
+export const assistantOpenOutput = {
+  port: z.number().int().describe("127.0.0.1 port the window connects to"),
+  code: z.string().describe("One-time pairing code the person types into the canvas's Assistant window (empty when already paired)"),
+  link: z.string().describe("Opens the canvas and pairs automatically — give this to the person"),
+  powered_by: poweredBy,
+  already_paired: z.boolean(),
+  next: z.string().describe("What to tell the person, then what to call"),
+};
+export const assistantListenOutput = {
+  status: z.enum(["message", "timeout", "sleep"]).describe("message = the person wrote; timeout = call again; sleep = stop, they are away"),
+  message: z.string().nullable().describe("What the person typed (several messages joined), or null"),
+  idle_s: z.number().int().describe("Seconds since the person last wrote"),
+};
+export const assistantSayOutput = {
+  delivered_to: z.number().int().describe("Open windows that received the reply (0 = the person closed the window; it shows when they reopen)"),
+};
+
+export const seamCheckSchema = z.object({
+  passed: z.boolean().describe("true = linework mismatch and leftover rotation are within stated tolerances"),
+  withheld: z.boolean().describe("true = seam check did not pass tolerance; measuring across seam is refused"),
+  tolerance_in: z.number().describe("Stated displacement tolerance in inches"),
+  rot_tolerance_deg: z.number().describe("Stated rotation tolerance in degrees"),
+  max_px: z.number().describe("True maximum linework displacement in image pixels"),
+  p95_px: z.number().describe("95th percentile linework displacement in image pixels"),
+  median_px: z.number().describe("Median linework displacement in image pixels"),
+  max_in: z.number().describe("True maximum linework displacement in inches at set scale"),
+  p95_in: z.number().describe("95th percentile linework displacement in inches at set scale"),
+  median_in: z.number().describe("Median linework displacement in inches at set scale"),
+  leftover_rotation_deg: z.number().describe("Leftover rotation between member sheets in degrees"),
+  sample_count: z.number().int().describe("Number of wall linework crossings sampled across the match line"),
+  withheld_reasons: z.array(z.string()).describe("Disclosed reasons for withholding if tolerances are exceeded"),
+  discrepancies: z.array(z.object({
+    at: point.describe("Stitch coordinates along the seam line to inspect with view_sheet"),
+    miss_px: z.number().describe("Displacement in pixels"),
+    miss_in: z.number().describe("Displacement in inches at scale"),
+    sheet_a_pt: point.optional(),
+    sheet_b_pt: point.optional(),
+  })).describe("Discrepancy locations along the match line"),
+  note: z.string().describe("Seam check summary note"),
+});
+
+export const alignStitchOutput = {
+  stitch_id: z.string().describe("The aligned composite surface key (starts with stitch:)"),
+  name: z.string().describe("Name of the stitched surface"),
+  aligned: z.boolean().describe("true = alignment completed"),
+  extent: z.object({
+    width_px: z.number(),
+    height_px: z.number(),
+  }).describe("Composite surface dimensions in image px at render scale 2.0"),
+  members: z.array(z.object({
+    key: z.string(),
+    dx: z.number(),
+    dy: z.number(),
+  })).describe("Member sheet placements within the composite surface"),
+  seam_check: seamCheckSchema.describe("Seam linework check results"),
+  note: z.string(),
+};
+
+export const stitchSheetsOutput = {
+  stitch_id: z.string().describe("The created composite surface key (starts with stitch:)"),
+  name: z.string().describe("Name of the stitched surface"),
+  aligned: z.boolean().describe("true = aligned across match lines; false = starting auto-butt layout"),
+  extent: z.object({
+    width_px: z.number(),
+    height_px: z.number(),
+  }).describe("Composite surface dimensions in image px at render scale 2.0"),
+  members: z.array(z.object({
+    key: z.string(),
+    dx: z.number(),
+    dy: z.number(),
+  })).describe("Member sheet placements within the composite surface"),
+  scale: z.object({
+    upp: z.number().nullable().optional(),
+    scale_confirmed: z.boolean().optional(),
+  }).describe("Scale status inherited from member sheets, if all member scales agree"),
+  seam_check: seamCheckSchema.optional().describe("Seam linework check results when align was provided"),
+  note: z.string(),
+};
+
+export const listStitchesOutput = {
+  stitches: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    aligned: z.boolean().optional().describe("true = aligned with match points; false = auto-butt"),
+    extent: z.object({
+      width_px: z.number(),
+      height_px: z.number(),
+    }),
+    members: z.array(z.object({
+      key: z.string(),
+      dx: z.number(),
+      dy: z.number(),
+    })),
+    scale: z.object({
+      upp: z.number().nullable().optional(),
+      scale_confirmed: z.boolean().optional(),
+    }),
+    shape_count: z.number().int(),
+    seam_check: z.object({
+      passed: z.boolean(),
+      max_in: z.number(),
+      p95_in: z.number().optional(),
+      median_in: z.number(),
+      leftover_rotation_deg: z.number(),
+      withheld: z.boolean(),
+    }).optional().describe("Seam check summary when aligned"),
+    created_at: z.string().optional(),
+  })),
+};
+
+export const rotatePageOutput = {
+  sheet: z.string(),
+  angle: z.number().int(),
+  output_file: z.string().optional(),
+  width_px: z.number(),
+  height_px: z.number(),
+  shapes_transformed: z.number().int(),
+  markups_transformed: z.number().int(),
+  note: z.string(),
+};
+
+export const reorderPagesOutput = {
+  file: z.string(),
+  order: z.array(z.number().int()),
+  output_file: z.string().optional(),
+  sheets: z.array(z.string()),
+  shapes_remapped: z.number().int(),
+  note: z.string(),
+};
+
+export const extractPagesOutput = {
+  source_file: z.string(),
+  output_file: z.string(),
+  takeoff_file: z.string().optional(),
+  extracted_pages: z.array(z.number().int()),
+  page_count: z.number().int(),
+  shapes_carried: z.number().int(),
+  note: z.string(),
+};
+
+export const mergeDocumentsOutput = {
+  merged_files: z.array(z.string()),
+  output_file: z.string(),
+  takeoff_file: z.string().optional(),
+  total_pages: z.number().int(),
+  shapes_remapped: z.number().int(),
+  note: z.string(),
 };

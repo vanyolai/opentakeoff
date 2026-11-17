@@ -1,10 +1,12 @@
 <div align="center">
 
+<img src="docs/img/brand/scan-star-banner.svg" alt="" width="100%">
+
 # OpenTakeoff
 
 > 本译文的部分功能说明可能落后于英文版。请查看[英文 README](README.md)和[共用 Wiki](docs/wiki/README.md)了解当前可用状态。
 
-> **One-Click Area is temporarily gated.** The flood engine is being re-validated against a wider plan corpus. Until that finishes the One-Click tool is off the canvas rail (`O` reports the gate) and the `one_click` / `detect_rooms` MCP verbs are **not registered** (a default build ships <!--tool-count-->53<!--/tool-count--> tools). Trace rooms with **Area** (`A`) in the canvas and `measure_polygon` over MCP; every other tool, sweep and derivation is unchanged. A build lifts the gate with `VITE_ONE_CLICK=1` (canvas) / `OPENTAKEOFF_ONE_CLICK=1` (server). Sections and videos below that show One-Click describe the engine as it returns — see [`docs/design/ONE_CLICK_GATE.md`](docs/design/ONE_CLICK_GATE.md).
+> **One-Click Area is temporarily gated.** The flood engine is being re-validated against a wider plan corpus. Until that finishes the One-Click tool is off the canvas rail (`O` reports the gate) and the `one_click` / `detect_rooms` MCP verbs are **not registered** (a default build ships <!--tool-count-->69<!--/tool-count--> tools). Trace rooms with **Area** (`A`) in the canvas and `measure_polygon` over MCP; every other tool, sweep and derivation is unchanged. A build lifts the gate with `VITE_ONE_CLICK=1` (canvas) / `OPENTAKEOFF_ONE_CLICK=1` (server). Sections and videos below that show One-Click describe the engine as it returns — see [`docs/design/ONE_CLICK_GATE.md`](docs/design/ONE_CLICK_GATE.md).
 
 **建筑图纸的测量引擎 —— 造得让 AI 智能体能驱动，也让估算员愿意用。**
 
@@ -13,7 +15,7 @@
 同样的算法、同样的记录。每一次测量都存着它的**比例**、它的**方法**，以及**是谁做的** ——
 这正是让结果可审计的原因，也是让它成为训练数据的原因。
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Live demo](https://img.shields.io/badge/demo-opentakeoff.kentucky--ai.com-2ea44f.svg)](https://opentakeoff.kentucky-ai.com)
 [![MCP registry](https://img.shields.io/badge/MCP-io.github.Kentucky--ai%2Fopentakeoff-6f42c1.svg)](https://registry.modelcontextprotocol.io)
 [![npm](https://img.shields.io/npm/v/opentakeoff-mcp?label=opentakeoff-mcp)](https://www.npmjs.com/package/opentakeoff-mcp)
@@ -44,7 +46,7 @@
 | **手上有标要投的估算员** | [打开画布](https://opentakeoff.kentucky-ai.com) —— 把图纸拖进去，无需账号，不上传任何东西。[**用户手册**](docs/USER_GUIDE.md)能带你在五分钟内从空白页走到导出算量，它的[工作顺序](docs/USER_GUIDE.md#the-working-order-on-a-real-bid)就是在真实标书上该走的顺序。 |
 | **一个 AI 智能体**（或者接线的人） | `npx -y opentakeoff-mcp`，然后看[**智能体手册**](docs/AGENT_GUIDE.md)：操作模型、每次算量都要走到的标准收尾、引擎拒绝瞎猜的地方,以及为什么。逐工具的参考在 [`mcp/README.md`](mcp/README.md)。 |
 | **在这个引擎上开发的工程师** | [`AGENTS.md`](AGENTS.md) 是仓库地图和上线纪律；[`FEATURES.md`](FEATURES.md) 把每项能力都对应到实现它的代码。 |
-| **想要自己一份副本的团队** | [**Fork 它**](#fork-它) —— 几分钟内在自己的 URL 上跑起自己的实例，Apache-2.0 协议，什么都不会往外发。要提 PR 也是同一条路。 |
+| **想要自己一份副本的团队** | [**Fork 它**](#fork-它) —— 几分钟内在自己的 URL 上跑起自己的实例，AGPL-3.0 协议，什么都不会往外发。要提 PR 也是同一条路。 |
 
 ### Windows、macOS、Linux —— 全平台
 
@@ -72,7 +74,7 @@ OpenTakeoff 是**纯客户端的浏览器应用**，所以这块画布在 Window
 
 OpenTakeoff 就是这个引擎,在同一套几何算法上跑着两个前端:
 
-- **一个 stdio MCP 服务器** —— `npx -y opentakeoff-mcp`,<!--tool-count-->53<!--/tool-count--> 个工具,
+- **一个 stdio MCP 服务器** —— `npx -y opentakeoff-mcp`,<!--tool-count-->69<!--/tool-count--> 个工具,
   在 [MCP 官方注册表](https://registry.modelcontextprotocol.io)上。一个智能体打开图纸、读图签栏、
   设定比例、漫水填充房间、在渲染叠加图上核对自己的工作,然后交回一份标记好的图纸 PDF。
 - **一块浏览器画布** —— 没有后端,没有账号,不上传。估算员把一套图纸拖进去描图,用的是
@@ -430,7 +432,7 @@ By-sheet / Materials / Shapes-audit / **按楼层 × 房间**,全精度单元格
 | **语音** | 按住说话式的算量口令,设备端 WebAssembly 识别;音频从不离开浏览器 |
 | **视图** | 浅色或**深色(负片)**——绘制时反转图纸像素,导出结果遵循 |
 | **存储** | IndexedDB + localStorage —— 纯客户端,不上传任何东西 |
-| **MCP 服务器** | <!--tool-count-->53<!--/tool-count--> 个工具 + 可通过 stdio 浏览的图纸资源,多文档会话([`mcp/`](mcp/README.md)) |
+| **MCP 服务器** | <!--tool-count-->69<!--/tool-count--> 个工具 + 可通过 stdio 浏览的图纸资源,多文档会话([`mcp/`](mcp/README.md)) |
 | **来源记录** | 每个图形都记录它的比例、方法、置信度,以及是人还是智能体做的 |
 | **捕获(可选开启)** | 内置的[捕获服务器](capture/README.md)把每次贡献的算量存为(几何 → 标签)训练数据行 |
 | **部署** | 一个静态构建产物 —— Netlify、Vercel、GitHub Pages、Cloudflare Pages、S3,任意静态主机 |
@@ -482,7 +484,7 @@ python3 capture/capture_server.py    # 然后,在应用的浏览器控制台里�
 OpenTakeoff 是一个应用研究项目的开放那一半,这个项目由一位在职的商用地面装修估算员运营,
 他自己造他所在部门在用的 AI([Kentucky AI](https://kentucky-ai.com))。这条开放核心的边界,
 和更优秀的开放科学软件所划的边界是同一条:**测量引擎 —— 渲染、比例、几何、导出、MCP
-服务器 —— 是 Apache-2.0 协议,并持续保持开放。用我们自己的估算档案训练出来的模型是专有的。**
+服务器 —— 是 AGPL-3.0 协议,并持续保持开放。用我们自己的估算档案训练出来的模型是专有的。**
 你得到一个不收席位费的真工具;只有我们的数据才能造出来的那部分,归我们所有。
 
 研究这一侧按实验室的方式运营,而依据本身就是重点:
@@ -534,7 +536,7 @@ npm run build      # → web/dist/  (静态文件;放到任何地方托管)
 
 ## Fork 它
 
-Apache-2.0:fork 它、改它、发布它 —— 给自己团队用,或者作为你自己产品的底座。fork 在这里既是
+AGPL-3.0:fork 它、改它、发布它 —— 给自己团队用,或者作为你自己产品的底座。如果你把修改过的版本提供给他人使用(包括托管服务),请以同一许可证公开你的修改。fork 在这里既是
 所有权的单位,也是贡献的单位:同样这三步,既能给你一个私有实例,也能给你一个可以送回来的分支。
 
 1. **[在 GitHub 上 fork](https://github.com/Kentucky-ai/opentakeoff/fork)**,然后克隆你的 fork。
@@ -635,5 +637,6 @@ pull request。
 
 ## 许可证
 
-[Apache License 2.0](LICENSE) —— 拿去用、[fork 它](#fork-它)、发布它、在它之上构建。
+[GNU Affero General Public License v3.0](LICENSE)(AGPL-3.0-only)—— 拿去用、[fork 它](#fork-它)、发布它、在它之上构建。
+提供修改版给他人使用(包括托管)时,请以同一许可证公开修改。提交 `84c7f48e`(标签 `apache-2.0-final`)之前的代码仍为 Apache-2.0。
 署名要求见 [NOTICE](NOTICE)。

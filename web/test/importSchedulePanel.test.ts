@@ -291,19 +291,15 @@ test("a key_rule CT-1 before a plain CT-1: the plain one is checked and counted;
   assert.match(html, /Create 1 condition</);
 });
 
-test("end to end: the reader's CT-1 COVE line above a floor CT-1 → the dialog keeps the floor row, flags the COVE row duplicate", () => {
+test("end to end: the reader's CT-1 COVE line above a floor CT-1 → two items, CT-1COVE and CT-1, both picked (the collision rule)", () => {
   const read = readScheduleSpans(build({ cols: MMC, items: [
     M("CPT-1", "BROADLOOM CARPET", "VENDOR-A", "GREY 101"), M("CT-1 COVE", "CERAMIC TILE BASE", "VENDOR-F", "WHITE"),
     M("CT-1", "CERAMIC TILE", "VENDOR-F", "WHITE"), M("PT-1", "PAINT", "VENDOR-E", "WHITE 601"),
   ] }));
-  assert.equal(read.rows.length, 4);
+  assert.deepEqual(read.rows.map((r) => r.finish_tag), ["CPT-1", "CT-1COVE", "CT-1", "PT-1"]);
   const html = renderWith({ rows: read.rows });
-  const ct = ctRows(html);
-  assert.equal(Object.keys(ct).length, 2, JSON.stringify(ct));
-  const cove = Object.keys(ct).find((d) => d.includes("CERAMIC TILE BASE"))!;
-  const floor = Object.keys(ct).find((d) => d === "CERAMIC TILE")!;
-  assert.equal(ct[cove], "off|duplicate");
-  assert.equal(ct[floor], "on|");
+  assert.deepEqual(ctRows(html), { "CERAMIC TILE": "on|" });
+  assert.deepEqual(tagRows(html, "CT-1COVE"), { "CERAMIC TILE BASE": "on|" });
 });
 
 // ── #482: a code repaired from an OCR misread ──────────────────────────────────
@@ -378,4 +374,54 @@ test("a key_rule row that was also repaired ranks with key_rule rows: under a re
   // over a NOT USED row
   const notUsed = { ...nu("PT-01", "floor", "NOT USED"), description: "UNUSED" };
   assert.deepEqual(tagRows(renderWith({ rows: [notUsed, krRa] }), "PT-01"), { UNUSED: "off|duplicate", BOTH: "on|" });
+});
+
+test("a historical flat code is visibly held, unchecked and disabled while a distinct suffix stays creatable", () => {
+  const html = renderWith({ rows: [row("G-01(C)", "floor", "heading"), row("G-01(W)", "floor", "heading")], existing: new Set(["G-01C"]) });
+  const held = rowOf(html, "G-01(C)");
+  assert.match(held, /check existing G-01C/);
+  assert.match(checkboxOf(held), /disabled/);
+  assert.doesNotMatch(checkboxOf(held), /checked/);
+  assert.match(checkboxOf(rowOf(html, "G-01(W)")), /checked/);
+  assert.match(html, /Create 1 condition</);
+  const dialog = html.match(/<div[^>]*role="dialog"[^>]*>/)![0];
+  const id = dialog.match(/aria-describedby="([^"]+)"/)![1];
+  assert.ok(html.includes(`role="note" id="${id}"`));
+  assert.match(html, /if it is the same finish, rename it before importing again/);
+});
+
+test("after the existing condition is renamed to its printed suffix, re-import is in use with no historical hold", () => {
+  const html = renderWith({ rows: [row("G-01(C)", "floor", "heading")], existing: new Set(["G-01 (C)"]) });
+  assert.match(rowOf(html, "G-01(C)"), />in use</);
+  assert.doesNotMatch(html, /check existing|Some codes may already exist without parentheses/);
+  assert.match(html, /Create 0 conditions/);
+});
+
+test("OCR disagreement and historical identity holds coexist without hiding either notice or enabling duplicate creation", () => {
+  const html = renderWith({ rows: [
+    { ...row("G-01(C)", "floor", "heading"), code_checks: [{ first: "G-01(C)", second: "G-01C" }] },
+    { ...row("S-2", "floor", "heading"), code_checks: [{ first: "S-2", second: "SS-2" }] },
+    row("PT-1", "floor", "heading"),
+  ], existing: new Set(["G-01C"]), skipped: ["EPOX"] });
+  const held = rowOf(html, "G-01(C)");
+  assert.match(held, /check existing G-01C/);
+  assert.match(held, /Check code: G-01\(C\) \/ G-01C/);
+  assert.match(checkboxOf(held), /disabled/);
+  assert.doesNotMatch(checkboxOf(held), /checked/);
+  const uncertain = rowOf(html, "S-2");
+  assert.doesNotMatch(checkboxOf(uncertain), /checked|disabled/);
+  const warningId = checkboxOf(uncertain).match(/aria-describedby="([^"]+)"/)![1];
+  assert.ok(html.includes(`id="${warningId}"`));
+  assert.match(checkboxOf(rowOf(html, "PT-1")), /checked/);
+  assert.match(html, /Create 1 condition</);
+  const ids = html.match(/role="dialog"[^>]*aria-describedby="([^"]+)"/)![1].split(" ");
+  assert.equal(new Set(ids).size, 3);
+  for (const id of ids) assert.ok(html.includes(`role="note" id="${id}"`));
+});
+
+test("an unconfirmed second read remains visible and unchecked even when every row was suggested", () => {
+  const html = renderWith({ rows: [{ ...row("P1", "floor", "heading"), code_checks: [{ first: "P1", second: "" }] }] });
+  assert.match(html, /Check code: P1 \/ second read did not confirm/);
+  assert.doesNotMatch(checkboxOf(rowOf(html, "P1")), /checked|disabled/);
+  assert.match(html, /Create 0 conditions/);
 });

@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../brand/icons.jsx";
+import { ScanStar, OtLockup } from "../brand/marks.jsx";
 import { keyText } from "../lib/keys.ts";
+import { SheetTree } from "./SheetTree.jsx";
 import "./workspaceChrome.css";
 
 // Workspace chrome. All actions are supplied by the existing canvas;
 // this component owns only navigation, search and disclosure state.
 export function WorkspaceChrome({ title, onOpen, onNavigate, navigationOpen, onTakeoffs, takeoffsOpen,
-  onPremium, onWork, workOpen, workButtonRef, pending, running, onReport, onFocus, onClassic,
-  onControls, controlsOpen, onSearch, pinControl, panelTools, layoutMenu, fileMenu, scaleMenu, conditionControl, aids, history, action }) {
+  onWork, workOpen, workButtonRef, pending, running, onReport, onEstimate, onFocus, onClassic,
+  onControls, controlsOpen, onSearch, pinControl, panelTools, layoutMenu, helpMenu, fileMenu, scaleMenu, conditionControl, aids, history, action }) {
   return <>
     <header className="calm-header">
-      <strong className="calm-brand">open<span>takeoff</span></strong>
+      <strong className="calm-brand" title="OpenTakeoff"><OtLockup size={15} />{running && <ScanStar size={13} reach={1.6} working style={{ marginLeft: 8, color: "var(--cobalt)" }} title="The agent is working" />}</strong>
       <div className="calm-project" title={title}><span>{title || "Untitled workspace"}</span><small>Premium workspace</small></div>
       <div className="calm-header-actions">
         <button type="button" onClick={onOpen} title="Open plans"><Icon name="plus" size={16} /><span>Open</span></button>
@@ -19,10 +21,11 @@ export function WorkspaceChrome({ title, onOpen, onNavigate, navigationOpen, onT
         {pinControl}
         <button type="button" onClick={onSearch} className="calm-search-trigger" title="Find a tool or action"><Icon name="search" size={16} /><span>Find an action</span><kbd>{keyText("⌘K")}</kbd></button>
         <button type="button" aria-pressed={takeoffsOpen} onClick={onTakeoffs} title="Measured quantities, conditions, and supporting materials"><Icon name="product" size={16} />Quantities</button>
-        <button type="button" ref={workButtonRef} aria-expanded={workOpen} onClick={onWork} className="calm-work">Work{running ? <span className="calm-badge">Running</span> : pending > 0 ? <span className="calm-badge">{pending}</span> : null}</button>
+        <button type="button" ref={workButtonRef} aria-expanded={workOpen} onClick={onWork} className="calm-work"><ScanStar size={13} working={running} />Work{running ? <span className="calm-badge">Running</span> : pending > 0 ? <span className="calm-badge">{pending}</span> : null}</button>
         {panelTools}
-        <button type="button" onClick={onReport} className="calm-report"><Icon name="document" size={16} />Report</button>
-        {layoutMenu}<button type="button" className="calm-premium" data-premium-trigger onClick={onPremium}>Request Premium</button><button type="button" onClick={onClassic} className="calm-classic" title="Return to the current layout without reloading the plan">Classic layout</button>
+        {onEstimate && <button type="button" onClick={onEstimate} title="Price the takeoff: material and labor per unit, markups, Excel">Estimate</button>}
+        <button type="button" onClick={onReport} className="calm-report" data-tour="report"><Icon name="document" size={16} />Report</button>
+        {layoutMenu}{helpMenu}<button type="button" onClick={onClassic} className="calm-classic" title="Return to the current layout without reloading the plan">Classic layout</button>
       </div>
     </header>
     <div className="calm-context" aria-label="Current drawing settings">
@@ -35,18 +38,21 @@ export function WorkspaceChrome({ title, onOpen, onNavigate, navigationOpen, onT
   </>;
 }
 
-export function WorkspaceNavigator({ open, items, current, onSelect, onClose, onGallery, dockSide, width, dockHandle }) {
+export function WorkspaceNavigator({ open, items, current, onSelect, onClose, onGallery, dockSide, width, dockHandle, namer = null, countKnown = () => true, hold, onReorderPages, onRotatePage, onDeletePage }) {
   const [query, setQuery] = useState("");
-  const matches = useMemo(() => items.filter((s) => `${s.label} ${s.file}`.toLowerCase().includes(query.trim().toLowerCase())), [items, query]);
   return <aside className="calm-navigator" data-dock-side={dockSide} style={{ width, order: dockSide === "right" ? 20 : -20 }} hidden={!open} aria-label="Sheet navigator" onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}>
     <header>{dockHandle}<strong>Sheets <small>{items.length}</small></strong><button type="button" aria-label="Close sheet navigator" onClick={onClose}>×</button></header>
     <label><Icon name="search" size={15} /><input name="workspace-sheet-search" aria-label="Find a sheet" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a sheet…" /></label>
-    <div className="calm-sheet-list">{matches.map((s) => <button type="button" key={s.key} aria-current={s.key === current ? "page" : undefined} onClick={() => onSelect(s.key)} title={`${s.label} · ${s.file}`}>
-      <Icon name="document" size={19} /><span><strong>{s.label}</strong><small>{s.file}</small></span>{s.count > 0 && <em>{s.count}</em>}
-    </button>)}{!matches.length && <p>{items.length ? "No sheets match your search." : "Open a plan to see its sheets here."}</p>}</div>
+    <SheetTree items={items} current={current} onSelect={onSelect} namer={namer} countKnown={countKnown} query={query} hold={hold} onSearchAll={onGallery} onReorderPages={onReorderPages} onRotatePage={onRotatePage} onDeletePage={onDeletePage} />
     <footer><button type="button" onClick={onGallery}><Icon name="sheets" size={16} />Open visual gallery</button></footer>
   </aside>;
 }
+
+// Row ids are built from the row's POSITION, not its action id: action ids carry
+// raw labels such as `scale-1/8" = 1'-0"`, and an id with quotes and spaces is
+// not a valid CSS selector — label[for=…] / #id lookups throw on it, which broke
+// page inspection (and the accessibility-tree readers built on it) app-wide.
+const actionDomId = (i) => `workspace-action-row-${i}`;
 
 export function WorkspaceCommandMenu({ open, onClose, actions, onOpenChange }) {
   const dialogRef = useRef(null);
@@ -64,9 +70,9 @@ export function WorkspaceCommandMenu({ open, onClose, actions, onOpenChange }) {
   useEffect(() => { dialogRef.current?.querySelector(".is-highlighted")?.scrollIntoView({ block: "nearest" }); }, [index]);
   const run = (row) => { if (row && !row.disabled) { onClose(); row.run(); } };
   return <dialog ref={dialogRef} className="calm-command-menu" onKeyDown={(e) => e.stopPropagation()} aria-label="Find an action" onCancel={(e) => { e.preventDefault(); onClose(); }} onClick={(e) => { if (e.target === e.currentTarget) { const r = e.currentTarget.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) onClose(); } }}>
-    <header><Icon name="search" size={18} /><input name="workspace-action-search" role="combobox" aria-autocomplete="list" aria-expanded={true} aria-controls="workspace-action-results" aria-activedescendant={rows[index] ? `workspace-action-${rows[index].id}` : undefined} aria-label="Search actions" autoFocus value={query} placeholder="Find a tool, sheet, or action…" onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
+    <header><Icon name="search" size={18} /><input name="workspace-action-search" role="combobox" aria-autocomplete="list" aria-expanded={true} aria-controls="workspace-action-results" aria-activedescendant={rows[index] ? actionDomId(index) : undefined} aria-label="Search actions" autoFocus value={query} placeholder="Find a tool, sheet, or action…" onChange={(e) => { setQuery(e.target.value); setIndex(0); }}
       onKeyDown={(e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setIndex((i) => Math.max(0, Math.min(rows.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))); } else if (e.key === "Enter") { e.preventDefault(); run(rows[index]); } }} /><button type="button" aria-label="Close action search" onClick={onClose}>Esc</button></header>
-    <div className="calm-command-results" id="workspace-action-results" role="listbox" aria-label="Actions">{rows.map((row, i) => <button type="button" role="option" tabIndex={-1} aria-selected={i === index} id={`workspace-action-${row.id}`} key={row.id} className={i === index ? "is-highlighted" : ""} disabled={row.disabled} onMouseEnter={() => setIndex(i)} onClick={() => run(row)}><span>{row.label}<small>{row.group}</small></span>{row.shortcut && <kbd>{keyText(row.shortcut)}</kbd>}</button>)}{!rows.length && <p>No matching action. Try “scale”, “import”, or a tool name.</p>}</div>
+    <div className="calm-command-results" id="workspace-action-results" role="listbox" aria-label="Actions">{rows.map((row, i) => <button type="button" role="option" tabIndex={-1} aria-selected={i === index} id={actionDomId(i)} key={row.id} className={i === index ? "is-highlighted" : ""} disabled={row.disabled} onMouseEnter={() => setIndex(i)} onClick={() => run(row)}><span>{row.label}<small>{row.group}</small></span>{row.shortcut && <kbd>{keyText(row.shortcut)}</kbd>}</button>)}{!rows.length && <p>No matching action. Try “scale”, “import”, or a tool name.</p>}</div>
     <footer>↑ ↓ to choose · Enter to run · Esc to close</footer>
   </dialog>;
 }

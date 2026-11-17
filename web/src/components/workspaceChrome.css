@@ -19,8 +19,9 @@
   letter-spacing:-.03em;
   white-space:nowrap;
 }
-.calm-brand span {
-  color:var(--cobalt);
+.calm-brand {
+  display:inline-flex;
+  align-items:center;
 }
 .calm-project {
   border-left:var(--rule-soft);
@@ -37,15 +38,34 @@
   font-weight:600;
 }
 .calm-project small {
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
   font-size:var(--fs-xs);
   color:var(--ink-muted);
+}
+/* A wide action row squeezes the project block to a sliver at laptop widths;
+   below this it can't hold a readable word, so it shows nothing rather than
+   one letter of each line spilling over the Open button. */
+.calm-project {
+  container-type:inline-size;
+}
+@container (max-width: 72px) {
+  .calm-project>span, .calm-project small { display:none; }
 }
 .calm-header-actions {
   display:flex;
   align-items:center;
   gap:var(--sp-1);
   min-width:0;
+  /* last resort when the row is still wider than the window: scroll it rather
+     than push Premium/Classic past the right edge (menus open position:fixed,
+     so scrolling never clips them — see ToolMenu) */
+  overflow-x:auto;
+  scrollbar-width:none;
 }
+.calm-header-actions::-webkit-scrollbar { display:none; }
 .calm-header button,.calm-context button,.calm-navigator button {
   display:inline-flex;
   align-items:center;
@@ -174,6 +194,9 @@
   justify-content:space-between;
   padding:var(--sp-3) var(--sp-4);
 }
+.calm-navigator header strong {
+  color:var(--ink);
+}
 .calm-navigator header small {
   font-size:var(--fs-xs);
   font-weight:400;
@@ -199,49 +222,46 @@
   background:transparent;
   color:var(--ink);
 }
-.calm-sheet-list {
+.calm-sheet-tree {
   flex:1;
   min-height:0;
   overflow:auto;
   padding:0 var(--sp-2);
 }
-.calm-sheet-list button {
+.calm-sheet-tree [role=treeitem] {
+  display:flex;
+  align-items:center;
+  gap:var(--sp-2);
   width:100%;
-  justify-content:flex-start;
-  text-align:left;
-  padding:var(--sp-3) var(--sp-2);
+  padding:var(--sp-2) var(--sp-2);
   margin-bottom:var(--sp-1);
+  border-radius:var(--r-1);
+  color:var(--ink);
+  cursor:pointer;
+  user-select:none;
 }
-.calm-sheet-list button[aria-current=page] {
-  background:var(--tint-select);
-  color:var(--cobalt);
-}
-.calm-sheet-list button>span {
-  flex:1;
-  min-width:0;
-}
-.calm-sheet-list strong,.calm-sheet-list small {
-  display:block;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
-}
-.calm-sheet-list strong {
-  font-weight:600;
-}
-.calm-sheet-list small {
-  font-size:var(--fs-xs);
-  color:var(--ink-muted);
-  margin-top:var(--sp-1);
-}
-.calm-sheet-list em {
-  font:var(--fs-xs) var(--f-mono);
-  color:var(--ink-muted);
-}
-.calm-sheet-list p {
-  padding:var(--sp-3);
-  color:var(--ink-secondary);
-}
+.calm-sheet-tree [role=treeitem]:hover { background:var(--tint-select); }
+.calm-sheet-tree [role=treeitem]:focus-visible { outline:2px solid var(--cobalt); outline-offset:-2px; }
+.calm-sheet-tree [role=treeitem][aria-current=page] { background:var(--tint-select); color:var(--cobalt); }
+.calm-sheet-tree .is-child { padding-left:calc(var(--sp-2) + var(--sp-5, 20px)); }
+.calm-sheet-tree .calm-tree-folder svg { transition:transform .12s ease; flex:none; }
+.calm-sheet-tree .calm-tree-folder[aria-expanded=true] svg { transform:rotate(90deg); }
+.calm-sheet-tree [role=treeitem]>span { flex:1; min-width:0; }
+.calm-sheet-tree strong,.calm-sheet-tree small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.calm-sheet-tree strong { font-weight:600; }
+.calm-sheet-tree .calm-sheet-number { font-family:var(--f-mono); letter-spacing:.01em; }
+.calm-sheet-tree small { font-size:var(--fs-xs); color:var(--ink-muted); margin-top:var(--sp-1); }
+.calm-sheet-tree .calm-tree-folder>small { margin-top:0; }
+.calm-sheet-tree em { font:var(--fs-xs) var(--f-mono); color:var(--ink-muted); }
+.calm-sheet-tree .calm-level-chip { font:var(--fs-xs) var(--f-mono); font-style:normal; padding:0 var(--sp-1); border:var(--rule-soft); border-radius:var(--r-1); color:var(--ink-secondary); }
+.calm-sheet-tree p { padding:var(--sp-3); color:var(--ink-secondary); }
+.calm-sheet-tree .calm-tree-note button { display:inline; padding:0; border:0; background:none; color:var(--cobalt); text-decoration:underline; cursor:pointer; font:inherit; }
+.calm-sheet-tree [role=treeitem].is-drag-over { outline: 2px dashed var(--cobalt); background: var(--tint-select); }
+.calm-sheet-tree .calm-sheet-row-tools { display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; margin-left: auto; }
+.calm-sheet-tree [role=treeitem]:hover .calm-sheet-row-tools, .calm-sheet-tree [role=treeitem]:focus-within .calm-sheet-row-tools { opacity: 1; }
+.calm-sheet-tree .calm-tree-action-btn { background: none; border: 1px solid var(--rule-soft); border-radius: var(--r-1); cursor: pointer; padding: 0 4px; font-size: var(--fs-xs); color: var(--ink-secondary); line-height: 1.2; }
+.calm-sheet-tree .calm-tree-action-btn:hover { background: var(--paper-warm); color: var(--cobalt); }
+
 .calm-navigator footer {
   padding:var(--sp-3);
   border-top:var(--rule-soft);
@@ -366,6 +386,13 @@
 }
 .workspace-calm [data-tool-rail] {
   padding-top:var(--sp-3)!important;
+}
+/* The action row needs ~1280px with the search label shown; collapse the
+   label (⌘K still works) before the row can overflow at 1366–1440 laptops. */
+@media(max-width:1500px) {
+  .calm-header .calm-search-trigger>span {
+    display:none;
+  }
 }
 @media(max-width:1250px) {
   .calm-project {

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/brand.css";   // OT-only brand marks (the scan star)
 import "./styles/print.css";   // OT-only print block — kept out of app.css so tokens/app stay byte-synced with Spline
 import TakeoffCanvas from "./pages/TakeoffCanvas.jsx";
 import ProjectHome from "./components/ProjectHome.jsx";
@@ -14,6 +15,8 @@ import { m365Config, M365_ENABLED_KEY } from "./lib/msgraph/config.js";
 import { cloudSyncEnabled } from "./lib/prefs.js";
 import { projectHomeFolderId } from "./lib/projectHome.js";
 import { initTheme } from "./lib/theme.js";
+import { LOW_MEMORY_DEVICE } from "./lib/deviceClass";
+import { byteBudget } from "./lib/pdfBytes";
 import { initDrawStyle } from "./lib/drawStyles.js";
 import { initDraftOutline } from "./lib/draftOutline.js";
 
@@ -130,10 +133,10 @@ function ProjectGate({ projectId }) {
           // bundle never load any Drive-sync code.
           const { buildLocalFirstStore } = await import("./lib/sync/composite.js");
           if (!live) return;   // navigated away during the import → don't build an orphan reconciler
-          next = buildLocalFirstStore(projectId, drive, createCloudStore(projectId, drive));
+          next = buildLocalFirstStore(projectId, drive, createCloudStore(projectId, drive, { maxPdfBytes: byteBudget(LOW_MEMORY_DEVICE) }));
         } else {
           if (!live) return;   // navigated away → don't install over whatever replaced the store
-          next = createCloudStore(projectId, drive);   // LEGACY Drive-canonical path — byte-identical to today
+          next = createCloudStore(projectId, drive, { maxPdfBytes: byteBudget(LOW_MEMORY_DEVICE) });   // LEGACY Drive-canonical path
         }
         setActiveStore(next);
         setStoreReady(true);
@@ -190,6 +193,8 @@ function ProjectHomeGate() {
 //   • permission lapsed  → a one-click re-grant screen (requestPermission
 //     needs a user gesture, so boot can only ask via a button)
 //   • handle dead        → say so, offer "work locally" and "forget folder"
+//   • browser silent     → the same screen: a permission query that never
+//     answers is treated as an unreachable folder after a short wait
 function FolderGate() {
   // status: checking | plain | building | ready | prompt | dead
   const [status, setStatus] = useState("checking");
@@ -252,6 +257,12 @@ function FolderGate() {
       const perm = await queryFolderPermission(l.handle);
       if (!live) return;
       if (perm === "granted") await install(l);
+      else if (perm === "unresponsive") {
+        // The browser never answered about this folder. Without this branch
+        // the gate stays on "checking" and the page is blank with no message.
+        setErr("The browser did not answer when asked about this folder.");
+        setStatus("dead");
+      }
       else setStatus("prompt"); // "denied" also lands here — the button re-asks
     })();
     // Uninstall on unmount so leaving the route restores the plain local store

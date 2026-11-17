@@ -17,6 +17,7 @@ import { oneClickEnabled, commandBoxEnabled } from "../lib/gate.js";
 import { useEffect, useRef } from "react";
 import { inOtherModal, otherModalOpen } from "../lib/modalKeys";
 import { Z, S } from "../lib/ui.js";
+import { ScanStar } from "../brand/marks.jsx";
 import { keyLabel, keyText, isApplePlatform } from "../lib/keys.ts";
 
 const GUIDE_URL = "https://github.com/Kentucky-ai/opentakeoff/blob/main/docs/USER_GUIDE.md";
@@ -107,7 +108,7 @@ export const VIEW = [
   [["?"], "Open this guide"],
 ];
 
-export default function UserGuide({ onClose }) {
+export default function UserGuide({ onClose, onTour, onConnect }) {
   // The dialog closes ITSELF, and that is not a style preference. The canvas's
   // Escape chain lives in an effect that early-returns while the plan-set
   // gallery is up — so a guide dismissed from there would have swallowed the
@@ -162,6 +163,23 @@ export default function UserGuide({ onClose }) {
           A takeoff canvas with a local workspace — no account required. Optional cloud and AI connections share data with the services you choose. Open a plan,
           set the scale, measure the finishes, export a priced quantity report.
         </p>
+
+        {(onTour || onConnect) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+            {onTour && (
+              <button type="button" onClick={onTour}
+                style={{ padding: "8px 14px", border: "none", background: "var(--cobalt)", color: "var(--accent-contrast)", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+                Start the guided first takeoff
+              </button>
+            )}
+            {onConnect && (
+              <button type="button" onClick={onConnect}
+                style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 14px", border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink)", fontSize: 12.5, cursor: "pointer" }}>
+                <ScanStar size={12} style={{ color: "var(--cobalt)" }} />Connect your AI
+              </button>
+            )}
+          </div>
+        )}
 
         <nav aria-label="Legal" style={{ display: "flex", gap: 16, marginBottom: 22, fontSize: 12.5 }}>
           <a href="/privacy/" target="_blank" rel="noreferrer">Privacy Policy</a>
