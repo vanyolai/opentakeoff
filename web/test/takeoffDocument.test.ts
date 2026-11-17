@@ -27,13 +27,13 @@ test("units is diff-only: imperial omits the key, metric writes it", () => {
 test("additive keys ride only when non-empty; palette drops ids that no longer resolve", () => {
   const conditions = [{ id: "c1", finish_tag: "CPT-1" }];
   const d = buildTakeoffDocument({
-    conditions, palette: ["c1", "gone"], client_info: { client: " " }, estimate_settings: {}, bid_proposal: {}, sheet_levels: {}, layer_overrides: {},
+    conditions, palette: ["c1", "gone"], client_info: { client: " " }, estimate_settings: {}, bid_proposal: {}, sheet_levels: {}, layer_overrides: {}, authored_layers: [],
     provenance_counters: { shapes_deleted: {} }, approvals: [], rules: [], stitches: [], condition_columns: [], shape_labels: [],
   });
   assert.deepEqual(d.palette, ["c1"]);
-  for (const k of ["client_info", "estimate_settings", "bid_proposal", "sheet_levels", "layer_overrides", "provenance_counters", "approvals", "rules", "stitches", "condition_columns", "shape_labels"]) assert.equal(k in d, false, k);
+  for (const k of ["client_info", "estimate_settings", "bid_proposal", "sheet_levels", "layer_overrides", "authored_layers", "provenance_counters", "approvals", "rules", "stitches", "condition_columns", "shape_labels"]) assert.equal(k in d, false, k);
   const full = buildTakeoffDocument({
-    conditions, palette: ["c1"], client_info: { client: "ACME" }, estimate_settings: { overhead_pct: 10 }, bid_proposal: { itemized: true }, sheet_levels: { "a.pdf": "L1" }, layer_overrides: { "a.pdf": { x: "exclude" } },
+    conditions, palette: ["c1"], client_info: { client: "ACME" }, estimate_settings: { overhead_pct: 10 }, bid_proposal: { itemized: true }, sheet_levels: { "a.pdf": "L1" }, layer_overrides: { "a.pdf": { x: "exclude" } }, authored_layers: [{ id: "cctv", name: "CCTV", visible: true, locked: false }],
     provenance_counters: { shapes_deleted: { s1: 1 } }, approvals: [{ id: "a" }], rules: [{ id: "r" }], stitches: [{ id: "st" }],
     condition_columns: [{ id: "k" }], shape_labels: [{ id: "l" }], proposals: [{ id: "p" }], condition_edit_proposals: [{ id: "e" }],
     split_view: { orientation: "v", ratio: 0.5, refKey: "a.pdf", refSet: ["a.pdf"] }, door_answers: { "withheld:0": "Not a door, leave it out" },

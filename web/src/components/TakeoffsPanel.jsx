@@ -488,7 +488,7 @@ export function ObjectSymbolTabs({ groups, activeGroupId, selectedSymbolId, colo
 // the docked panel AND the restored top-bar band render the SAME editor (one
 // source of truth, like the app's single activateCondition path). Owns only its
 // hatch-popover open state; everything else flows through the passed handlers.
-export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondParam, onAssignAttr, conditionColumns = [], layout = "stack", units = "imperial", rollInfo = null }) {
+export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondParam, onAssignAttr, conditionColumns = [], authoredLayers = [], layout = "stack", units = "imperial", rollInfo = null }) {
   const [hatchOpen, setHatchOpen] = useState(false);
   const activeColor = c.color || "#c96442";
   // Top-bar band ("row") only: the two palettes fold into two swatch buttons
@@ -605,6 +605,15 @@ export function ConditionAppearanceEditor({ cond: c, onUpdateCond, onSetCondPara
             onChange={(e) => patchObjectStyle({ next_sequence: Math.max(1, parseInt(e.target.value, 10) || 1) })}
             title="Next number assigned when an object is placed" style={{ ...ip, width: 52 }} />
         </>}
+        <span style={{ color: "var(--ink-muted)", marginLeft: 2 }}>Layer</span>
+        <select name="condition-object-layer" value={objectStyle.layer_id || ""}
+          onChange={(e) => patchObjectStyle({ layer_id: e.target.value || null })}
+          title="Default authored layer for Count objects placed under this condition. Separate from PDF source layers."
+          style={{ fontSize: 11, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", padding: "2px 4px", maxWidth: 150 }}>
+          <option value="">Unlayered</option>
+          {objectStyle.layer_id && !authoredLayers.some((layer) => layer.id === objectStyle.layer_id) && <option value={objectStyle.layer_id}>Missing: {objectStyle.layer_id}</option>}
+          {authoredLayers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+        </select>
       </div>
       {isRow && rule()}
       {isRow ? (
@@ -1047,9 +1056,63 @@ function AssemblyBar({ cond, assemblies, onApply }) {
   );
 }
 
+function AuthoredLayersEditor({ layers = [], usage = new Map(), onAdd, onUpdate, onDelete }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const name = draft.trim();
+    if (!name || !onAdd) return;
+    onAdd(name);
+    setDraft("");
+  };
+  return (
+    <div style={{ flex: 1, overflow: "auto", fontSize: 11.5 }}>
+      <div style={{ padding: "8px 12px 4px", color: "var(--ink-muted)", fontSize: 11 }}>
+        Authored object layers control visibility and edit-locking for Count objects. They are project data and are separate from source-PDF layers.
+      </div>
+      {layers.length === 0 && <div style={{ padding: "6px 12px 10px", color: "var(--ink-muted)" }}>No authored layers yet. Unlayered objects stay visible and editable.</div>}
+      {layers.map((layer) => {
+        const u = usage.get(layer.id) || { types: 0, instances: 0 };
+        const used = (u.types || 0) + (u.instances || 0);
+        return (
+          <div key={layer.id} data-authored-layer={layer.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderTop: "1px solid var(--ink-faint)" }}>
+            <button type="button" onClick={() => onUpdate?.(layer.id, { visible: layer.visible === false })}
+              aria-pressed={layer.visible !== false} title={layer.visible === false ? "Show this authored layer" : "Hide this authored layer"}
+              style={{ minWidth: 44, padding: "2px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: layer.visible === false ? "transparent" : "var(--ink)", color: layer.visible === false ? "var(--ink-muted)" : "var(--paper-bright)", cursor: "pointer", fontSize: 10.5 }}>
+              {layer.visible === false ? "Show" : "Hide"}
+            </button>
+            <button type="button" onClick={() => onUpdate?.(layer.id, { locked: !layer.locked })}
+              aria-pressed={!!layer.locked} title={layer.locked ? "Unlock editing on this authored layer" : "Lock editing on this authored layer"}
+              style={{ minWidth: 48, padding: "2px 6px", borderRadius: 0, border: "1px solid " + (layer.locked ? "var(--cobalt)" : "var(--ink-faint)"), background: layer.locked ? "var(--cobalt)" : "transparent", color: layer.locked ? "var(--paper-bright)" : "var(--ink-muted)", cursor: "pointer", fontSize: 10.5 }}>
+              {layer.locked ? "Locked" : "Lock"}
+            </button>
+            <LibDraftInput name="authored-layer-name" value={layer.name} width={120}
+              onCommitText={(text) => {
+                const name = text.trim();
+                if (name && name !== layer.name) onUpdate?.(layer.id, { name });
+              }} />
+            <span title="Condition defaults / resolved count instances" style={{ flexShrink: 0, fontFamily: "var(--f-mono,monospace)", fontSize: 9.5, color: "var(--ink-muted)" }}>
+              {u.types || 0} type · {u.instances || 0} obj
+            </span>
+            <button type="button" disabled={used > 0} onClick={() => onDelete?.(layer.id)}
+              title={used > 0 ? "Reassign the conditions/objects that use this layer before deleting it" : "Delete this unused authored layer"}
+              style={{ flexShrink: 0, padding: "2px 6px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: "transparent", color: used > 0 ? "var(--ink-faint)" : "var(--c-danger)", cursor: used > 0 ? "default" : "pointer", fontSize: 11 }}>✕</button>
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", gap: 6, padding: "8px 12px", borderTop: layers.length ? "1px solid var(--ink-faint)" : "none" }}>
+        <input name="new-authored-layer" value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+          placeholder="e.g. CCTV devices" style={{ ...ip, flex: 1, minWidth: 0 }} />
+        <button type="button" onClick={add} disabled={!draft.trim()}
+          style={{ padding: "3px 8px", borderRadius: 0, border: "1px solid var(--ink)", background: draft.trim() ? "var(--ink)" : "transparent", color: draft.trim() ? "var(--paper-bright)" : "var(--ink-faint)", cursor: draft.trim() ? "pointer" : "default", fontSize: 11 }}>+ layer</button>
+      </div>
+    </div>
+  );
+}
 function TakeoffsPanel({
   open, width, overlay = false, multiSheet, dockSide, layoutLocked = false, dockHandle, units = "imperial",
   conditions, activeCond, visRowById, projRowById = new Map(), conditionColumns, shapeLabels = [], templates, palette = [], rollByCond = null,
+  authoredLayers = [], authoredLayerUsage = new Map(), onAddAuthoredLayer, onUpdateAuthoredLayer, onDeleteAuthoredLayer,
   transitionSources = [],
   matLib, matLibById, linkedCountById,
   panelPrefs, onPanelPrefs, reassigning, epoch, clearSelectionRef,
@@ -1070,7 +1133,7 @@ function TakeoffsPanel({
   hiddenConds = NO_HIDDEN, onToggleHidden,
   tradeHidden = NO_HIDDEN, viewTradeLabel = null, onShowAllTrades,
 }) {
-  const [panelTab, setPanelTab] = useState("takeoffs");       // "takeoffs" | "library" | "materials" | "columns"
+  const [panelTab, setPanelTab] = useState("takeoffs");       // "takeoffs" | "library" | "materials" | "columns" | "layers"
   const assemblies = useAssemblyLibrary();
   const [condQuery, setCondQuery] = useState("");             // live filter over the condition list (transient, never persisted)
   const [matLibQuery, setMatLibQuery] = useState("");         // Materials tab search (transient; describes the browser-global library, so hydrate/epoch leaves it alone)
@@ -1368,7 +1431,7 @@ function TakeoffsPanel({
             </div>
           );
         })()}
-        {on && <ConditionAppearanceEditor cond={c} onUpdateCond={onUpdateCond} onSetCondParam={onSetCondParam} onAssignAttr={onAssignAttr} conditionColumns={conditionColumns} units={units} rollInfo={rollByCond?.get(c.id) || null} />}
+        {on && <ConditionAppearanceEditor cond={c} onUpdateCond={onUpdateCond} onSetCondParam={onSetCondParam} onAssignAttr={onAssignAttr} conditionColumns={conditionColumns} authoredLayers={authoredLayers} units={units} rollInfo={rollByCond?.get(c.id) || null} />}
         {on && onDeriveTransitions && <TransitionsAction cond={c} sources={transitionSources} draft={transDraft} setDraft={setTransDraft}
           result={transResult} setResult={setTransResult} onDerive={onDeriveTransitions} onLocate2={onLocateTransition} />}
         {matOn && (
@@ -1463,7 +1526,7 @@ function TakeoffsPanel({
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div data-takeoffs-header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 12px", background: "var(--ink)", color: "var(--paper-cream)", flexShrink: 0 }}>
           {dockHandle}<span style={{ display: "inline-flex", gap: 2 }}>
-            {[["takeoffs", `Takeoffs · ${multiSheet ? "these sheets" : "this sheet"}`], ["library", `Library${templates.length ? ` (${templates.length})` : ""}`], ["materials", `Materials${matLib.length ? ` (${matLib.length})` : ""}`], ["columns", `Columns${conditionColumns.length ? ` (${conditionColumns.length})` : ""}`]].map(([id, label]) => (
+            {[["takeoffs", `Takeoffs · ${multiSheet ? "these sheets" : "this sheet"}`], ["library", `Library${templates.length ? ` (${templates.length})` : ""}`], ["materials", `Materials${matLib.length ? ` (${matLib.length})` : ""}`], ["columns", `Columns${conditionColumns.length ? ` (${conditionColumns.length})` : ""}`], ["layers", `Layers${authoredLayers.length ? ` (${authoredLayers.length})` : ""}`]].map(([id, label]) => (
               <button key={id} aria-pressed={panelTab === id} onClick={() => setPanelTab(id)}
                 style={{ padding: "3px 8px", border: "none", borderBottom: panelTab === id ? "2px solid var(--paper-cream)" : "2px solid transparent", background: "none", color: "var(--paper-cream)", opacity: panelTab === id ? 1 : 0.65, cursor: "pointer", fontWeight: 700, fontSize: 12.5 }}>{label}</button>
             ))}
@@ -1675,6 +1738,10 @@ function TakeoffsPanel({
               <button onClick={onAddLibMaterial} style={btnAddFull}>+ add library material</button>
             </div>
           </div>
+        )}
+        {panelTab === "layers" && (
+          <AuthoredLayersEditor layers={authoredLayers} usage={authoredLayerUsage}
+            onAdd={onAddAuthoredLayer} onUpdate={onUpdateAuthoredLayer} onDelete={onDeleteAuthoredLayer} />
         )}
         {/* Columns tab — the custom-columns manager (#31/#33): project-level
             vocabulary; per-condition assignment lives in the active row's

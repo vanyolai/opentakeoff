@@ -316,6 +316,38 @@ export function applyShapeCommand(shapes, cmd) {
       });
       return { shapes: next, inverse };
     }
+    case "objectLayer": {
+      const idSet = new Set(cmd.ids || []);
+      const inverse = {
+        type: "objectLayer",
+        restore: shapes.filter((s) => idSet.has(s.id)).map((s) => ({ id: s.id, ...(Object.prototype.hasOwnProperty.call(s, "object") ? { object: s.object } : {}) })),
+      };
+      if (cmd.restore) {
+        const byId = new Map(cmd.restore.map((r) => [r.id, r]));
+        return {
+          shapes: shapes.map((s) => {
+            const r = byId.get(s.id);
+            if (!r) return s;
+            if (Object.prototype.hasOwnProperty.call(r, "object")) return { ...s, object: r.object };
+            const out = { ...s }; delete out.object; return out;
+          }),
+          inverse: {
+            type: "objectLayer",
+            restore: shapes.filter((s) => byId.has(s.id)).map((s) => ({ id: s.id, ...(Object.prototype.hasOwnProperty.call(s, "object") ? { object: s.object } : {}) })),
+          },
+        };
+      }
+      const next = shapes.map((s) => {
+        if (!idSet.has(s.id) || s.measure_role !== "count") return s;
+        const object = s.object && typeof s.object === "object" && !Array.isArray(s.object) ? { ...s.object } : {};
+        if (cmd.value === undefined) delete object.layer_id;          // inherit condition layer
+        else if (cmd.value === null) object.layer_id = null;         // explicit detach / Unlayered
+        else if (typeof cmd.value === "string" && cmd.value.trim()) object.layer_id = cmd.value.trim();
+        else delete object.layer_id;
+        return { ...s, object };
+      });
+      return { shapes: next, inverse };
+    }
     case "delete": {
       const idSet = new Set(cmd.ids);
       const removed = [], at = [];

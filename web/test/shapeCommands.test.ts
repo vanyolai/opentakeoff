@@ -251,6 +251,21 @@ test("objectLabel: edits count identifiers without touching grouping labels and 
   assert.deepEqual(applyShapeCommand(forward.shapes, forward.inverse).shapes, [count]);
 });
 
+test("objectLayer: override, explicit detach, inherit and undo preserve the whole object block", () => {
+  const count = { id: "count", measure_role: "count", object: { label: "CAM-7", layer_id: "type-layer" } };
+
+  const overridden = applyShapeCommand([count], { type: "objectLayer", ids: ["count"], value: "instance-layer" } as any);
+  assert.deepEqual((overridden.shapes[0] as any).object, { label: "CAM-7", layer_id: "instance-layer" });
+  assert.deepEqual(applyShapeCommand(overridden.shapes, overridden.inverse).shapes, [count]);
+
+  const detached = applyShapeCommand([count], { type: "objectLayer", ids: ["count"], value: null } as any);
+  assert.equal((detached.shapes[0] as any).object.layer_id, null);
+
+  const inherited = applyShapeCommand(detached.shapes, { type: "objectLayer", ids: ["count"], value: undefined } as any);
+  assert.equal(Object.prototype.hasOwnProperty.call((inherited.shapes[0] as any).object, "layer_id"), false);
+  assert.equal((inherited.shapes[0] as any).object.label, "CAM-7");
+});
+
 test("add: restore:true re-inserts VERBATIM (no created_at re-stamp, no id re-mint) at the recorded indices", () => {
   const a = manualShape("shp-a"), b = machineShape("shp-b"), c = manualShape("shp-c");
   const res = applyShapeCommand([a, c], { type: "add", shapes: [clone(b)], restore: true, at: [1] });

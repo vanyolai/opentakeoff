@@ -142,7 +142,8 @@ import { sanitizeConditionColumns, sanitizeConditionAttrs, renameColumnValue, co
 import { sanitizeShapeLabels, sanitizeShapeLabelsOnShapes, renameShapeLabel, shapeLabelValue } from "../lib/shapeLabels.js";
 import { nextHidden, revealed } from "../lib/conditionVisibility.js";
 import { buildMarkedSetPdf, downloadBytes, splitLoadedSheets, skippedPdfsNote } from "../lib/markedset.js";
-import { allocateSequentialObjectLabels, defaultObjectStyle, newLabeledObjectInstance, resolveObjectStyle, sanitizeConditionObjectStyles, sanitizeCountObjects } from "../lib/objectPresentation.js";
+import { allocateSequentialObjectLabels, defaultObjectStyle, effectiveObjectLayerId, newLabeledObjectInstance, resolveObjectStyle, sanitizeConditionObjectStyles, sanitizeCountObjects } from "../lib/objectPresentation.js";
+import { authoredLayerUsage, authoredObjectLayerState, authoredObjectLocked, authoredObjectVisible, newAuthoredLayer, sanitizeAuthoredLayers } from "../lib/authoredLayers.js";
 import { repeatPlan } from "../lib/repeatTool.js";
 import { createDragCache, sheetContentSignature, dragFilename, downloadUrlEntry } from "../lib/dragOut.js";
 import { counterRows } from "../lib/liveCounter.js";
@@ -705,6 +706,7 @@ export default function TakeoffCanvas() {
   const [conditions, setConditions] = useState([]);
   const [conditionColumns, setConditionColumns] = useState([]);  // project-level custom-column vocabulary [{ id, name, values }] — assignments live on c.attrs
   const [shapeLabels, setShapeLabels] = useState([]);  // project-level flat vocabulary of phase/area labels (#110) — assignment lives on shape.label
+  const [authoredLayers, setAuthoredLayers] = useState([]); // project-authored Count-object layers; separate from PDF OCG source layers
   const [activeCond, setActiveCond] = useState("");
   const [activeLabel, setActiveLabel] = useState(null);   // session-only active phase/area label (#111) — new traces get it; NOT persisted (absent from buildPayload, reset on hydrate)
   const [palette, setPalette] = useState([]);   // ordered condition ids pinned to the top-bar quick-access palette (≤ PALETTE_MAX)
@@ -1727,10 +1729,16 @@ export default function TakeoffCanvas() {
   const tradeHidden = useMemo(() => { const h = tradeHiddenIds(conditions, viewTrade); h.delete(activeCond); return h; }, [conditions, viewTrade, activeCond]);
   const tradeCountMap = useMemo(() => tradeCounts(conditions), [conditions]);
   const viewHidden = useMemo(() => (tradeHidden.size ? new Set([...hiddenConds, ...tradeHidden]) : hiddenConds), [hiddenConds, tradeHidden]);
+  const layerCondById = useMemo(() => new Map(conditions.map((c) => [c.id, c])), [conditions]);
   const stackedShapes = useMemo(() => {
-    const drawn = viewHidden.size ? visibleShapes.filter((s) => !viewHidden.has(s.condition_id)) : visibleShapes;
+    const conditionVisible = viewHidden.size ? visibleShapes.filter((s) => !viewHidden.has(s.condition_id)) : visibleShapes;
+    const drawn = conditionVisible.filter((s) => authoredObjectVisible(layerCondById.get(s.condition_id), s, authoredLayers));
     return [...drawn].sort((a, b) => tierOf(a) - tierOf(b));
-  }, [visibleShapes, viewHidden]);
+  }, [visibleShapes, viewHidden, layerCondById, authoredLayers]);
+  const editableStackedShapes = useMemo(
+    () => stackedShapes.filter((s) => !authoredObjectLocked(layerCondById.get(s.condition_id), s, authoredLayers)),
+    [stackedShapes, layerCondById, authoredLayers]
+  );
   // Reference-pane shapes (split screen, Task 5): deliberately NOT filtered
   // through `visibleShapes` — the reference pane can frame a sheet the
   // primary's sheetGroup doesn't include at all (the tab-drop gesture from
@@ -1742,8 +1750,8 @@ export default function TakeoffCanvas() {
   // drop out here too (#440 parity): a condition hidden on the primary never
   // reappears in the mirror.
   const refStackedShapes = useMemo(
-    () => (effectiveRefKey ? shapes.filter((s) => s.sheet_id === effectiveRefKey && !viewHidden.has(s.condition_id)).sort((a, b) => tierOf(a) - tierOf(b)) : []),
-    [shapes, effectiveRefKey, viewHidden]
+    () => (effectiveRefKey ? shapes.filter((s) => s.sheet_id === effectiveRefKey && !viewHidden.has(s.condition_id) && authoredObjectVisible(layerCondById.get(s.condition_id), s, authoredLayers)).sort((a, b) => tierOf(a) - tierOf(b)) : []),
+    [shapes, effectiveRefKey, viewHidden, layerCondById, authoredLayers]
   );
   const visibleMarkups = useMemo(() => {
     const keys = new Set(sheetGroup.length ? sheetGroup : [sheetKey]);
@@ -2321,6 +2329,7 @@ export default function TakeoffCanvas() {
     setBidProposal(a.bid_proposal && typeof a.bid_proposal === "object" ? sanitizeBidProposal(a.bid_proposal) : null);   // same unconditional-set rule
     setConditionColumns(sanitizeConditionColumns(a.condition_columns));   // non-array/malformed → [] (unconditional set: snapshot load must not inherit pre-load columns)
     setShapeLabels(sanitizeShapeLabels(a.shape_labels));   // same unconditional-set rule: a snapshot load must not inherit the replaced project's label vocabulary
+    setAuthoredLayers(sanitizeAuthoredLayers(a.authored_layers)); // additive; missing/invalid registry safely becomes []
     setActiveLabel(null);   // active label is session-only — never carry one from the replaced project into a fresh/loaded one
     // multipliers get the same load-time trust pass (#455): a project saved before
     // import refused bad values can still carry a 0 / negative / string — repair it
@@ -3498,6 +3507,7 @@ export default function TakeoffCanvas() {
     conditions: overrides.conditions ?? conditions,
     condition_columns: overrides.condition_columns ?? conditionColumns,
     shape_labels: overrides.shape_labels ?? shapeLabels,
+    authored_layers: overrides.authored_layers ?? authoredLayers,
     palette: overrides.palette ?? palette,
     shapes: overrides.shapes ?? shapes,
     markups: overrides.markups ?? markups,
@@ -4489,7 +4499,7 @@ export default function TakeoffCanvas() {
     // state it serializes, so listing buildPayload (a new identity each render)
     // would fire a save on every render instead of only on a real change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shapes, conditions, conditionColumns, shapeLabels, palette, scales, scaleSources, scaleUnconfirmed, markups, approvals, rfis, proposals, conditionEditProposals, rules, provCounters, sheetGroup, sheetLevels, layerOverrides, lastGroup, openTabs, stitches, projectName, clientInfo, estimateSettings, bidProposal, units, splitView, doorAnswers]);
+  }, [shapes, conditions, conditionColumns, shapeLabels, authoredLayers, palette, scales, scaleSources, scaleUnconfirmed, markups, approvals, rfis, proposals, conditionEditProposals, rules, provCounters, sheetGroup, sheetLevels, layerOverrides, lastGroup, openTabs, stitches, projectName, clientInfo, estimateSettings, bidProposal, units, splitView, doorAnswers]);
   useEffect(() => { saveStateRef.current = saveState; }, [saveState]);
 
   // Flush a pending debounced save on navigate-away (unmount), and warn before a
@@ -5342,12 +5352,12 @@ export default function TakeoffCanvas() {
       }
     }
     // 3. move the selected shape if its body (not a handle) was hit
-    if (sel && selSp && hitShapeC(sel, p[0] - selSp.xOffset, p[1], selSp.img.w, selSp.img.h, thr)) {
+    if (sel && selSp && !authoredObjectLocked(condById[sel.condition_id], sel, authoredLayers) && hitShapeC(sel, p[0] - selSp.xOffset, p[1], selSp.img.w, selSp.img.h, thr)) {
       dragRef.current = { kind: "move", shapeId: selectedId, start: p, orig: sel.verts_norm, prev: geomSnapshot(sel), shape: sel, gx: e.clientX, gy: e.clientY };
       e.currentTarget.setPointerCapture(e.pointerId); return;
     }
     // 4. otherwise pick a shape (or clear the selection)
-    const hit = [...stackedShapes].reverse().find((s) => {
+    const hit = [...editableStackedShapes].reverse().find((s) => {
       const sp = panelByKey(s.sheet_id);
       return hitShapeC(s, p[0] - sp.xOffset, p[1], sp.img.w, sp.img.h, thr);
     });
@@ -6540,6 +6550,8 @@ export default function TakeoffCanvas() {
     const sw = sweep;
     if (!sw) return;
     if (!activeCond) { setCommitMsg("Pick or add a condition first."); return; }
+    const layerState = authoredObjectLayerState(condById[activeCond], null, authoredLayers);
+    if (layerState.layer && (!layerState.visible || layerState.locked)) { setCommitMsg(`Layer “${layerState.layer.name}” is ${layerState.visible ? "locked" : "hidden"} — show/unlock it before placing objects.`); return; }
     const rows = [];
     const off = new Set(sw.excludedTags);
     const tagKey = (m) => (m.label && m.label.label) || "\u2205";
@@ -6567,6 +6579,8 @@ export default function TakeoffCanvas() {
 
   function commitCount(p) {
     if (!activeCond) { setCommitMsg("Pick or add a condition first."); return; }
+    const layerState = authoredObjectLayerState(condById[activeCond], null, authoredLayers);
+    if (layerState.layer && (!layerState.visible || layerState.locked)) { setCommitMsg(`Layer “${layerState.layer.name}” is ${layerState.visible ? "locked" : "hidden"} — show/unlock it before placing objects.`); return; }
     const tp = panelAt(p[0]);
     const numbered = allocateSequentialObjectLabels(condById[activeCond], 1);
     if (numbered.object_style) updateCondById(activeCond, { object_style: numbered.object_style });
@@ -8413,6 +8427,7 @@ export default function TakeoffCanvas() {
   function reassignSelected(condId) { if (selectedId) dispatchShape({ type: "reassign", ids: [selectedId], condition_id: condId }); }
   function reassignSelectedLabel(value) { if (selectedId) dispatchShape({ type: "label", ids: [selectedId], value }); }   // Select-tool single-shape re-label (#111) — value "" / null clears it; label commands never stamp
   function renameSelectedObjectLabel(value) { if (selectedId) dispatchShape({ type: "objectLabel", ids: [selectedId], value }); }
+  function setSelectedObjectLayer(value) { if (selectedId) dispatchShape({ type: "objectLayer", ids: [selectedId], value }); }
 
   // pan/zoom the canvas to fit a condition's takeoffs on the open sheets —
   // the panel's ⌖ / double-click navigation. Fit zoom is capped so a lone
@@ -9939,6 +9954,39 @@ export default function TakeoffCanvas() {
 
   const condById = Object.fromEntries(conditions.map((c) => [c.id, c]));
   const aCond = condById[activeCond];
+  const authoredLayerUsageMap = useMemo(() => authoredLayerUsage(authoredLayers, conditions, shapes), [authoredLayers, conditions, shapes]);
+  const addAuthoredLayer = useCallback((name) => {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    setAuthoredLayers((layers) => [...layers, newAuthoredLayer(`layer-${mintUuid()}`, clean)]);
+  }, []);
+  const updateAuthoredLayer = useCallback((id, patch) => {
+    setAuthoredLayers((layers) => layers.map((layer) => {
+      if (layer.id !== id) return layer;
+      const next = { ...layer, ...patch };
+      if (Object.prototype.hasOwnProperty.call(patch || {}, "name")) {
+        const clean = typeof patch.name === "string" ? patch.name.trim() : "";
+        next.name = clean || layer.name;
+      }
+      return next;
+    }));
+  }, []);
+  const deleteAuthoredLayer = useCallback((id) => {
+    const used = authoredLayerUsageMap.get(id);
+    if ((used?.types || 0) + (used?.instances || 0) > 0) {
+      setCommitMsg("Reassign objects that use this layer before deleting it.");
+      return;
+    }
+    setAuthoredLayers((layers) => layers.filter((layer) => layer.id !== id));
+  }, [authoredLayerUsageMap]);
+  useEffect(() => {
+    if (!selectedId) return;
+    const selected = shapes.find((shape) => shape.id === selectedId);
+    if (!selected) return;
+    const selectedCondition = conditions.find((condition) => condition.id === selected.condition_id);
+    const state = authoredObjectLayerState(selectedCondition, selected, authoredLayers);
+    if (!state.visible || state.locked) setSelectedId(null);
+  }, [selectedId, shapes, conditions, authoredLayers]);
   // resolve pinned ids to live conditions for the top-bar palette (a stale id
   // renders nothing — the persisted list is pruned on save/delete, this is the
   // render-time guard)
@@ -11773,7 +11821,12 @@ export default function TakeoffCanvas() {
             const sub = (txt) => <div style={{ fontSize: 12.5, color: "var(--ink-secondary)", marginTop: 2 }}>{txt}</div>;
             const foot = <div style={{ fontSize: 11.5, color: "var(--ink-muted)", marginTop: 4 }}>{shTag} · selected{selShape.origin === "agent" ? " · agent" : ""}</div>;
             if (selShape.measure_role === "count") {
-              const shownLabel = resolveObjectStyle(condById[selShape.condition_id], selShape).label;
+              const condition = condById[selShape.condition_id];
+              const shownLabel = resolveObjectStyle(condition, selShape).label;
+              const hasLayerOverride = Object.prototype.hasOwnProperty.call(selShape.object || {}, "layer_id");
+              const selectedLayerValue = hasLayerOverride ? (selShape.object?.layer_id || "__none__") : "__inherit__";
+              const effectiveLayerId = effectiveObjectLayerId(condition, selShape);
+              const effectiveLayerName = authoredLayers.find((layer) => layer.id === effectiveLayerId)?.name || (effectiveLayerId ? "missing layer" : "Unlayered");
               return <>
                 {big(num(c.count || 1, 0), "EA")}
                 <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)" }}>
@@ -11782,6 +11835,18 @@ export default function TakeoffCanvas() {
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                     onBlur={(e) => { if (e.target.value.trim() !== shownLabel) renameSelectedObjectLabel(e.target.value); }}
                     style={{ width: 92, padding: "2px 5px", borderRadius: 0, border: "1px solid var(--ink-faint)", fontFamily: "var(--f-mono)", fontSize: 11.5 }} />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)" }}>
+                  Layer
+                  <select name="selected-object-layer" value={selectedLayerValue}
+                    onChange={(e) => setSelectedObjectLayer(e.target.value === "__inherit__" ? undefined : e.target.value === "__none__" ? null : e.target.value)}
+                    title={`Resolved layer: ${effectiveLayerName}. Inherit follows the condition's default layer.`}
+                    style={{ maxWidth: 140, padding: "2px 4px", borderRadius: 0, border: "1px solid var(--ink-faint)", background: "var(--paper-bright)", fontSize: 11 }}>
+                    <option value="__inherit__">Inherit type</option>
+                    <option value="__none__">Unlayered</option>
+                    {hasLayerOverride && selShape.object?.layer_id && !authoredLayers.some((layer) => layer.id === selShape.object.layer_id) && <option value={selShape.object.layer_id}>Missing: {selShape.object.layer_id}</option>}
+                    {authoredLayers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+                  </select>
                 </label>
                 {foot}
               </>;
@@ -12073,7 +12138,7 @@ export default function TakeoffCanvas() {
           onBell={() => setAgentOpen((v) => !v)} pending={pendingN} />;
       })()}
       {workspaceLayout && !workspaceArrangement.readout && selShape?.measure_role === "surface_area" && <div className="calm-property-editor"><label>Selected wall height <input aria-label="Selected wall height" type="number" min="0" step={heightStep(units)} value={shapeHDraft ?? dimInputStr(selShape.height_ft, units, "height")} onChange={(e) => { setShapeHDraft(e.target.value); setShapeHeight(e.target.value); }} onBlur={() => { if (shapeHDraft != null) setShapeHeight(shapeHDraft); setShapeHDraft(null); }} /></label><span>{heightUnit(units)} → {fa(selShape.computed?.area_sf || 0)}</span><button type="button" onClick={clearShapeHeight}>Use condition height</button></div>}
-      {!focusMode && workspaceLayout && workspaceDetailsOpen && aCond && <div className="calm-property-editor"><strong>{aCond.finish_tag}</strong><ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} layout="row" units={units} /><button type="button" onClick={() => setWorkspaceDetailsOpen(false)}>Close properties</button></div>}
+      {!focusMode && workspaceLayout && workspaceDetailsOpen && aCond && <div className="calm-property-editor"><strong>{aCond.finish_tag}</strong><ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} authoredLayers={authoredLayers} layout="row" units={units} /><button type="button" onClick={() => setWorkspaceDetailsOpen(false)}>Close properties</button></div>}
       {workspaceLayout && <><WorkspaceCommandMenu open={workspaceSearchOpen} onClose={() => setWorkspaceSearchOpen(false)} actions={workspaceActions} onOpenChange={onMenuDepth} /><WorkspaceLayoutDialog open={workspaceLayoutOpen} onClose={() => setWorkspaceLayoutOpen(false)} prefs={workspacePrefs} onOpenChange={onMenuDepth} /></>}
       {!focusMode && (!workspaceLayout || workspaceControlsOpen) && (
         <div data-topbar style={{ display: "flex", gap: 7, alignItems: "center", padding: "0 14px 6px", borderBottom: "1px solid var(--ink-faint)", background: "var(--paper-bright)", whiteSpace: "nowrap" }}>
@@ -12353,7 +12418,7 @@ export default function TakeoffCanvas() {
           {aCond && (
             <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--ink-faint)", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "var(--sp-2)" }}>
               <button type="button" aria-expanded={conditionDetails} onClick={() => setConditionDetails((v) => !v)} style={{ border: "1px solid var(--ink-faint)", background: "transparent", color: "var(--ink-secondary)", padding: "var(--sp-1) var(--sp-2)", fontSize: "var(--fs-s)", cursor: "pointer" }}>{conditionDetails ? "▾" : "▸"} {aCond.finish_tag} properties</button>
-              {conditionDetails && <ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} layout="row" units={units} />}
+              {conditionDetails && <ConditionAppearanceEditor cond={aCond} onUpdateCond={updateCond} onSetCondParam={setCondParam} onAssignAttr={assignAttr} conditionColumns={conditionColumns} authoredLayers={authoredLayers} layout="row" units={units} />}
             </div>
           )}
         </div>
@@ -13140,6 +13205,9 @@ export default function TakeoffCanvas() {
           visRowById={visRowById} projRowById={projRowById}
           conditionColumns={conditionColumns}
           shapeLabels={shapeLabels}
+          authoredLayers={authoredLayers}
+          authoredLayerUsage={authoredLayerUsageMap}
+          onAddAuthoredLayer={addAuthoredLayer} onUpdateAuthoredLayer={updateAuthoredLayer} onDeleteAuthoredLayer={deleteAuthoredLayer}
           templates={templates}
           palette={palette}
           hiddenConds={hiddenConds}

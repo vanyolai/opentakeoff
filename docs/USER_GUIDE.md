@@ -679,6 +679,19 @@ With a shape selected, click a condition **panel row, strip chip, or palette chi
 
 When a **Count** is selected, its readout includes **Plan label**. Editing it writes an instance label for that count only; it overrides the condition's tag/custom/sequential display without changing EA or the shape-label classification below. Copy/paste preserves object metadata, and a sequential condition assigns the pasted count a fresh sequence label.
 
+### Authored object layers
+
+The Takeoffs panel's **Layers** tab manages project-authored layers for Count objects. These are not the same thing as a PDF's CAD/OCG source layers.
+
+- Add a layer, rename it, **Hide/Show** it, or **Lock/Unlock** it. Visibility and lock state are saved with the project.
+- In a condition's **Object** properties, **Layer** sets the default layer for newly placed and inherited Count objects.
+- With one Count selected, its readout has a **Layer** selector. **Inherit type** follows the condition; **Unlayered** explicitly detaches that one object; choosing another layer creates an instance override.
+- Hiding an authored layer removes its Count objects from the canvas and reference pane, but does **not** change EA totals, the Report, Marked Set, CSV or XLSX.
+- Locking a layer prevents its Count objects from being selected/moved and prevents new Count placement while that condition's effective layer is locked. Unlock it to edit again.
+- A layer that is still used by a condition or Count object cannot be deleted. Reassign those references first.
+- If a project contains a stale/missing layer ID, the object stays visible and editable and the selector shows **Missing: …** so you can repair it. Missing metadata never hides takeoff data.
+
+
 ### Shape labels — phases and areas
 
 Labels answer "which part of the job is this?" without more conditions: *Phase 1*, *East Wing*, *Alt-2*. The vocabulary lives in the Takeoffs panel's **Columns** tab (add, rename—labeled shapes follow, remove—shapes keep their value); once any labels exist, a **Label** cluster appears in the toolbar:
