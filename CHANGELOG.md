@@ -5,6 +5,7 @@
 - Synced the self-hosted line onto upstream `d2e13764`, including Trade view, Electrical & low-voltage suites, assemblies, estimate/pricing work and the large-plan-set renderer changes.
 - Count conditions can use the original color square or a built-in electrical/low-voltage symbol, with none/tag/custom/sequential plan labels. The same marker renderer is shared by the main canvas and reference pane; Report legends and Marked Set output use the same presentation model.
 - `condition.object_style.layer_id` and `countShape.object.layer_id` remain the authored-layer seam; a real layer registry/show-hide-lock UI is the next downstream milestone.
+- Condition templates retain both the upstream Trade assignment and downstream object presentation; a fresh sequential template restarts its numbering at 1.
 - Supporting-material coverage input, presets, CSV/XLSX labels and the floating live counter follow imperial/metric display units while storage and quantity math stay in native units. Upstream assembly quantity rules and per-item waste are preserved.
 
 ## 2026-11-15 — large plan sets open and flip faster, in far less memory (#580, part 1)
