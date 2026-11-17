@@ -16,6 +16,7 @@ const doc = (over: Record<string, unknown> = {}) => ({
   sheet_group: [],
   last_group: [],
   sheet_tabs: ["va.pdf"],
+  authored_layers: [],
   ...over,
 });
 
