@@ -21,6 +21,7 @@ import { sanitizeApprovals } from "./approvals.js";
 import { normalizeAgentReview } from "./reviewState.js";
 import { isValidMultiplier } from "./multiplier.js";
 import { sanitizeStitches, stitchPlacementsMatch } from "./stitches.ts";
+import { sanitizeAuthoredLayers } from "./authoredLayers.js";
 
 /** Parse + gate an import file's text. Throws with copy the message bar shows
  * verbatim — "Couldn't…" is the canvas's danger convention (isDangerMsg), so
@@ -212,6 +213,16 @@ export function mergeTakeoffImport(current, imported, knownFiles = null) {
   const stitchIds = new Set(arr(cur.stitches).map((s) => s?.id).filter(Boolean));
   const addedStitches = impStitches.filter((s) => !stitchIds.has(s.id));
 
+  // ── authored object layers: vocabulary required by imported Count metadata ─
+  // Operator definitions win on an id collision (same rule as conditions by
+  // finish tag / stitches by id). New imported ids append so an imported
+  // object_style.layer_id or shape.object.layer_id keeps its human name and
+  // visibility/lock definition instead of becoming a dangling reference.
+  const curAuthoredLayers = sanitizeAuthoredLayers(cur.authored_layers);
+  const authoredLayerIds = new Set(curAuthoredLayers.map((layer) => layer.id));
+  const addedAuthoredLayers = sanitizeAuthoredLayers(imported.authored_layers)
+    .filter((layer) => !authoredLayerIds.has(layer.id));
+
   // Everything else is the operator's workspace, not import cargo: name, tabs,
   // grouping, levels, columns, labels, palette, client info, rules, counters
   // all stay current (rules never ride the MCP export by RFC scope anyway).
@@ -225,6 +236,7 @@ export function mergeTakeoffImport(current, imported, knownFiles = null) {
     ...(addedEdits.length ? { condition_edit_proposals: [...arr(cur.condition_edit_proposals), ...addedEdits] } : {}),
     ...(addedApprovals.length ? { approvals: [...arr(cur.approvals), ...addedApprovals] } : {}),
     ...(arr(cur.stitches).length || addedStitches.length ? { stitches: [...arr(cur.stitches), ...addedStitches] } : {}),
+    ...(curAuthoredLayers.length || addedAuthoredLayers.length ? { authored_layers: [...curAuthoredLayers, ...addedAuthoredLayers] } : {}),
     sheets,
   };
   return {

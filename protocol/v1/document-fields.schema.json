@@ -198,6 +198,34 @@
     "layer_overrides": {
       "type": "object"
     },
+    "authored_layers": {
+      "type": "array",
+      "description": "Project-authored Count-object layers. Separate from source-PDF/OCG layer_overrides.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": true
+      }
+    },
     "condition_columns": {
       "type": "array"
     },

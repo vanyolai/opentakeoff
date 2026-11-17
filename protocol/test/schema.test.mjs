@@ -98,3 +98,13 @@ test("known secondary families retain data without claiming full semantic valida
   assertValid(assert, ajv, "v1/takeoff-document.schema.json", d);
   // Draft conformance does not claim relationship resolution or full markup/RFI schemas.
 });
+
+test("authored object layers are a known additive document family", () => {
+  const d = document();
+  d.authored_layers = [{ id: "cctv", name: "CCTV devices", visible: false, locked: true, future: { retained: true } }];
+  assertValid(assert, ajv, "v1/takeoff-document.schema.json", d);
+
+  const bad = document();
+  bad.authored_layers = [{ id: "cctv", name: "CCTV devices", visible: "false" }];
+  assert.equal(ajv.getSchema(schemaBase + "v1/takeoff-document.schema.json")(bad), false);
+});

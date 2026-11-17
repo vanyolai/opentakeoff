@@ -16,6 +16,7 @@ const doc = (over: Record<string, unknown> = {}) => ({
   sheet_group: [],
   last_group: [],
   sheet_tabs: ["va.pdf"],
+  authored_layers: [],
   ...over,
 });
 
@@ -106,6 +107,41 @@ test("workspace fields stay the operator's on merge: name, tabs, groups", () => 
   assert.equal(payload.project_name, "My Bid");
   assert.deepEqual(payload.sheet_tabs, ["va.pdf#3"]);
   assert.deepEqual(payload.sheet_group, ["va.pdf", "va.pdf#2"]);
+});
+
+test("authored layer registry merges additively while operator definitions win", () => {
+  const current = {
+    project_name: "My Bid",
+    shapes: [{ id: "s0", sheet_id: "va.pdf", condition_id: "mine", measure_role: "count", object: { layer_id: "existing" } }],
+    markups: [],
+    conditions: [{ id: "mine", finish_tag: "MINE", multiplier: 1, object_style: { layer_id: "existing" } }],
+    sheets: [],
+    authored_layers: [{ id: "existing", name: "My existing layer", visible: false, locked: true }],
+  };
+  const imported = doc({
+    conditions: [{ id: "c1", finish_tag: "CAM-1", multiplier: 1, object_style: { layer_id: "cctv" }, materials: [] }],
+    shapes: [{ id: "s1", sheet_id: "va.pdf", condition_id: "c1", measure_role: "count", verts_norm: [[0.1, 0.1]], computed: { count: 1 }, object: { layer_id: "cctv" }, origin: { method: "manual" } }],
+    authored_layers: [
+      { id: "existing", name: "Imported collision", visible: true, locked: false },
+      { id: "cctv", name: "CCTV devices", visible: true, locked: false },
+    ],
+  });
+  const { payload, note } = mergeTakeoffImport(current, imported);
+  assert.equal(note.replaced, false);
+  assert.deepEqual(payload.authored_layers, [
+    { id: "existing", name: "My existing layer", visible: false, locked: true },
+    { id: "cctv", name: "CCTV devices", visible: true, locked: false },
+  ]);
+  assert.equal(payload.conditions.find((c: any) => c.finish_tag === "CAM-1").object_style.layer_id, "cctv");
+  assert.equal(payload.shapes.find((shape: any) => shape.id === "s1").object.layer_id, "cctv");
+});
+
+test("clean replace carries authored layer registry wholesale", () => {
+  const current = { conditions: [], shapes: [], markups: [], sheets: [] };
+  const imported = doc({ authored_layers: [{ id: "cctv", name: "CCTV devices", visible: false, locked: true }] });
+  const { payload, note } = mergeTakeoffImport(current, imported);
+  assert.equal(note.replaced, true);
+  assert.deepEqual(payload.authored_layers, imported.authored_layers);
 });
 
 test("unknown files are reported so the banner can explain an invisible import", () => {

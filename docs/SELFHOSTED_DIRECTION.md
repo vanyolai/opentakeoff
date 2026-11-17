@@ -65,8 +65,11 @@ build on that model:
 - the canvas Trade view remains the show/hide surface for trade-scoped work;
 - downstream `object_style` controls how Count objects inside those conditions
   render (square/symbol, plan label, authored-layer default);
-- per-instance `shape.object` carries the instance label and future layer
-  override without changing the upstream quantity model.
+- project-level `authored_layers` is the registry for our own Count-object
+  layers; condition `object_style.layer_id` supplies the default and
+  per-instance `shape.object.layer_id` can inherit, detach or override it
+  without changing the upstream quantity model. Authored layers are explicitly
+  separate from PDF/OCG source layers.
 
 CCTV, Data, Access, Intrusion and Fire therefore remain user-defined conditions
 inside the upstream Electrical & low-voltage trade rather than becoming a second
@@ -87,7 +90,9 @@ The integrated milestone is usable when:
 6. Save/load, copy/paste, templates and undo/redo preserve object presentation.
 7. Supporting-material coverage follows imperial/metric display units without
    changing stored rates or upstream assembly rules.
-8. Automated tests cover legacy defaults, symbol/label persistence,
+8. Authored-layer show/hide is view-only, lock blocks UI editing/placement,
+   dangling ids fail open, and referenced layers cannot be deleted silently.
+9. Automated tests cover legacy defaults, symbol/label/layer persistence,
    marker-independent totals and metric coverage.
 
 ## Near-term reporting note

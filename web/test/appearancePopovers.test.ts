@@ -63,3 +63,19 @@ test("condition marks replace the hatch/report square only for symbol conditions
   assert.match(symbolLegend, /data-condition-mark="symbol" data-symbol-id="camera_dome"/);
   assert.match(squareLegend, /data-condition-mark="square"/);
 });
+
+test("condition object editor exposes authored layer defaults and dangling ids", () => {
+  const layers = [{ id: "cctv", name: "CCTV devices", visible: true, locked: false }];
+  const layered = { ...cond, object_style: { marker: "square", label_mode: "none", layer_id: "cctv" } };
+  const html = renderToStaticMarkup(
+    React.createElement(ConditionAppearanceEditor as any, { cond: layered, authoredLayers: layers, onUpdateCond: noop, onSetCondParam: noop, onAssignAttr: noop, layout: "row" })
+  );
+  assert.match(html, /name="condition-object-layer"/);
+  assert.match(html, /CCTV devices/);
+
+  const dangling = { ...layered, object_style: { ...layered.object_style, layer_id: "old-layer" } };
+  const danglingHtml = renderToStaticMarkup(
+    React.createElement(ConditionAppearanceEditor as any, { cond: dangling, authoredLayers: layers, onUpdateCond: noop, onSetCondParam: noop, onAssignAttr: noop, layout: "row" })
+  );
+  assert.match(danglingHtml, /Missing: old-layer/);
+});
