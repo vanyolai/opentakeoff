@@ -7206,16 +7206,29 @@ export default function TakeoffCanvas() {
     const needsScale = clipRef.current.some((c) => c.measure_role !== "count");
     if (needsScale && !uppFor(tp.key)) { setCommitMsg(`Set the scale for ${labelFor(tp)} first — paste recomputes SF/LF there.`); return; }
     let cross = false;
+    // Allocate sequential object labels per condition in one pass. A clipboard
+    // can grow beyond the current single-selection UI; allocating one-by-one
+    // from the render-scope condById would otherwise reuse the same "next" value.
+    const countByCondition = new Map();
+    for (const c of clipRef.current) if (c.measure_role === "count") {
+      countByCondition.set(c.condition_id, (countByCondition.get(c.condition_id) || 0) + 1);
+    }
+    const sequenceByCondition = new Map();
+    for (const [conditionId, count] of countByCondition) {
+      const numbered = allocateSequentialObjectLabels(condById[conditionId], count);
+      sequenceByCondition.set(conditionId, { labels: numbered.labels, at: 0 });
+      if (numbered.object_style) updateCondById(conditionId, { object_style: numbered.object_style });
+    }
     const made = clipRef.current.map((c) => {
       const same = c.from === tp.key;
       cross = cross || !same;
       // same sheet: nudge so the copy is visible; other sheet: same relative spot
       const vn = c.verts_norm.map(([x, y]) => (same ? [Math.min(0.999, x + offset), Math.min(0.999, y + offset)] : [x, y]));
       // != null, not truthy: an overridden height of 0 must survive the paste
-      const numbered = c.measure_role === "count" ? allocateSequentialObjectLabels(condById[c.condition_id], 1) : { labels: [], object_style: null };
-      if (numbered.object_style) updateCondById(c.condition_id, { object_style: numbered.object_style });
+      const seq = sequenceByCondition.get(c.condition_id);
+      const nextObjectLabel = seq && seq.at < seq.labels.length ? seq.labels[seq.at++] : "";
       const object = c.measure_role === "count"
-        ? { ...(c.object || {}), ...(numbered.labels[0] ? { label: numbered.labels[0] } : {}) }
+        ? { ...(c.object || {}), ...(nextObjectLabel ? { label: nextObjectLabel } : {}) }
         : null;
       const s = { sheet_id: tp.key, condition_id: c.condition_id, measure_role: c.measure_role, verts_norm: vn, ...(c.height_ft != null ? { height_ft: c.height_ft } : {}), ...(c.height_override ? { height_override: true } : {}), ...(c.label ? { label: c.label } : {}), ...(object ? { object } : {}), ...cloneOrigin(c.origin) };
       return { ...s, computed: recomputeShape(s) };

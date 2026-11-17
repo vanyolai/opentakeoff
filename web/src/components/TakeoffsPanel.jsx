@@ -270,7 +270,12 @@ export function MaterialsEditor({ materials, onAdd, onUpdate, onRemove, library,
             <input name="material-name" value={m.name} onChange={(e) => onUpdate(m.id, { name: e.target.value })} placeholder="Material (e.g. Adhesive)" style={{ ...ip, width: 160, ...(ov("name") ? { border: OV } : {}) }} />
             {ov("name") && rv(m, "name")}
             {/* quantity rule (lib/totals.js itemRule): "1 gal per 150 SF" (coverage) or "2 ea per 1 EA" (each — per piece) */}
-            <select name="material-rule" value={itemRule(m)} onChange={(e) => onUpdate(m.id, { rule: e.target.value === "each" ? "each" : undefined })}
+            <select name="material-rule" value={itemRule(m)} onChange={(e) => {
+                const shown = rateToDisplay(m);
+                const rule = e.target.value === "each" ? "each" : undefined;
+                const nextRow = { ...m, rule };
+                onUpdate(m.id, { rule, per: rateFromDisplay(nextRow, shown) });
+              }}
               title="Quantity rule — coverage: 1 unit per N measured (1 gal per 150 SF); each: N units per 1 measured (2 anchors per EA, 1 plate per piece)"
               style={{ ...ip, background: "var(--paper-bright)" }}>
               <option value="coverage">1 per N</option>
